@@ -1,7 +1,6 @@
-import SwiftUI
 import UIKit
 
-class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   var window: UIWindow?
 
   func scene(
@@ -16,8 +15,8 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   }
 }
 
-@UIApplicationMain
-class AppDelegate: UIResponder, UIApplicationDelegate {
+@main
+final class AppDelegate: UIResponder, UIApplicationDelegate {
   func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?

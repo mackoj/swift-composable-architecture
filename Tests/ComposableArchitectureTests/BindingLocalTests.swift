@@ -3,12 +3,13 @@
 
   @testable import ComposableArchitecture
 
-  @MainActor
-  final class BindingLocalTests: XCTestCase {
+  final class BindingLocalTests: BaseTCATestCase {
+    @available(*, deprecated)
+    @MainActor
     public func testBindingLocalIsActive() {
       XCTAssertFalse(BindingLocal.isActive)
 
-      struct MyReducer: ReducerProtocol {
+      struct MyReducer: Reducer {
         struct State: Equatable {
           var text = ""
         }
@@ -17,16 +18,18 @@
           case textChanged(String)
         }
 
-        func reduce(into state: inout State, action: Action) -> EffectTask<Action> {
-          switch action {
-          case let .textChanged(text):
-            state.text = text
-            return .none
-          }
+        var body: some Reducer<State, Action> {
+          Reduce(internal: { state, action in
+            switch action {
+            case .textChanged(let text):
+              state.text = text
+              return .none
+            }
+          })
         }
       }
 
-      let store = Store(initialState: MyReducer.State(), reducer: MyReducer())
+      let store = Store(initialState: MyReducer.State()) { MyReducer() }
       let viewStore = ViewStore(store, observe: { $0 })
 
       let binding = viewStore.binding(get: \.text) { text in

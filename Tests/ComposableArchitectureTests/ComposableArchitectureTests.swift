@@ -3,12 +3,9 @@ import CombineSchedulers
 import ComposableArchitecture
 import XCTest
 
-@MainActor
-final class ComposableArchitectureTests: XCTestCase {
-  var cancellables: Set<AnyCancellable> = []
-
+final class ComposableArchitectureTests: BaseTCATestCase {
   func testScheduling() async {
-    struct Counter: ReducerProtocol {
+    struct Counter: Reducer {
       typealias State = Int
       enum Action: Equatable {
         case incrAndSquareLater
@@ -16,36 +13,42 @@ final class ComposableArchitectureTests: XCTestCase {
         case squareNow
       }
       @Dependency(\.mainQueue) var mainQueue
-      func reduce(into state: inout State, action: Action) -> EffectTask<Action> {
-        switch action {
-        case .incrAndSquareLater:
-          return .merge(
-            EffectTask(value: .incrNow)
-              .delay(for: 2, scheduler: self.mainQueue)
-              .eraseToEffect(),
-            EffectTask(value: .squareNow)
-              .delay(for: 1, scheduler: self.mainQueue)
-              .eraseToEffect(),
-            EffectTask(value: .squareNow)
-              .delay(for: 2, scheduler: self.mainQueue)
-              .eraseToEffect()
-          )
-        case .incrNow:
-          state += 1
-          return .none
-        case .squareNow:
-          state *= state
-          return .none
+      var body: some Reducer<State, Action> {
+        Reduce { state, action in
+          switch action {
+          case .incrAndSquareLater:
+            return .run { send in
+              await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                  try await self.mainQueue.sleep(for: .seconds(2))
+                  await send(.incrNow)
+                }
+                group.addTask {
+                  try await self.mainQueue.sleep(for: .seconds(1))
+                  await send(.squareNow)
+                }
+                group.addTask {
+                  try await self.mainQueue.sleep(for: .seconds(2))
+                  await send(.squareNow)
+                }
+              }
+            }
+          case .incrNow:
+            state += 1
+            return .none
+          case .squareNow:
+            state *= state
+            return .none
+          }
         }
       }
     }
 
     let mainQueue = DispatchQueue.test
 
-    let store = TestStore(
-      initialState: 2,
-      reducer: Counter()
-    ) {
+    let store = await TestStore(initialState: 2) {
+      Counter()
+    } withDependencies: {
       $0.mainQueue = mainQueue.eraseToAnyScheduler()
     }
 
@@ -64,13 +67,16 @@ final class ComposableArchitectureTests: XCTestCase {
   }
 
   func testSimultaneousWorkOrdering() {
+    var cancellables: Set<AnyCancellable> = []
+    defer { _ = cancellables }
+
     let mainQueue = DispatchQueue.test
 
     var values: [Int] = []
     mainQueue.schedule(after: mainQueue.now, interval: 1) { values.append(1) }
-      .store(in: &self.cancellables)
+      .store(in: &cancellables)
     mainQueue.schedule(after: mainQueue.now, interval: 2) { values.append(42) }
-      .store(in: &self.cancellables)
+      .store(in: &cancellables)
 
     XCTAssertEqual(values, [])
     mainQueue.advance()
@@ -82,27 +88,27 @@ final class ComposableArchitectureTests: XCTestCase {
   func testLongLivingEffects() async {
     enum Action { case end, incr, start }
 
-    let effect = AsyncStream<Void>.streamWithContinuation()
+    let effect = AsyncStream.makeStream(of: Void.self)
 
-    let reducer = Reduce<Int, Action> { state, action in
-      switch action {
-      case .end:
-        return .fireAndForget {
-          effect.continuation.finish()
-        }
-      case .incr:
-        state += 1
-        return .none
-      case .start:
-        return .run { send in
-          for await _ in effect.stream {
-            await send(.incr)
+    let store = await TestStore(initialState: 0) {
+      Reduce<Int, Action> { state, action in
+        switch action {
+        case .end:
+          return .run { _ in
+            effect.continuation.finish()
+          }
+        case .incr:
+          state += 1
+          return .none
+        case .start:
+          return .run { send in
+            for await _ in effect.stream {
+              await send(.incr)
+            }
           }
         }
       }
     }
-
-    let store = TestStore(initialState: 0, reducer: reducer)
 
     await store.send(.start)
     await store.send(.incr) { $0 = 1 }
@@ -120,31 +126,28 @@ final class ComposableArchitectureTests: XCTestCase {
       case response(Int)
     }
 
-    let reducer = Reduce<Int, Action> { state, action in
-      enum CancelID {}
+    let store = await TestStore(initialState: 0) {
+      Reduce<Int, Action> { state, action in
+        enum CancelID { case sleep }
 
-      switch action {
-      case .cancel:
-        return .cancel(id: CancelID.self)
+        switch action {
+        case .cancel:
+          return .cancel(id: CancelID.sleep)
 
-      case .incr:
-        state += 1
-        return .task { [state] in
-          try await mainQueue.sleep(for: .seconds(1))
-          return .response(state * state)
+        case .incr:
+          state += 1
+          return .run { [state] send in
+            try await mainQueue.sleep(for: .seconds(1))
+            await send(.response(state * state))
+          }
+          .cancellable(id: CancelID.sleep)
+
+        case .response(let value):
+          state = value
+          return .none
         }
-        .cancellable(id: CancelID.self)
-
-      case let .response(value):
-        state = value
-        return .none
       }
     }
-
-    let store = TestStore(
-      initialState: 0,
-      reducer: reducer
-    )
 
     await store.send(.incr) { $0 = 1 }
     await mainQueue.advance(by: .seconds(1))

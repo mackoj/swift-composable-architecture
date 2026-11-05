@@ -32,12 +32,13 @@ data to be written to disk, or user defaults to be written, or any number of thi
 better to use mock versions of those dependencies so that the user can interact with your feature
 in a fully controlled environment.
 
-To do this you can use the ``ReducerProtocol/dependency(_:_:)`` method to override a reducer's
+To do this you can use the ``Reducer/dependency(_:_:)`` method to override a reducer's
 dependency with another value:
 
 ```swift
-struct Onboarding: ReducerProtocol {
-  var body: some ReducerProtocol<State, Action> {
+@Reducer
+struct Onboarding {
+  var body: some Reducer<State, Action> {
     Reduce { state, action in 
       // Additional onboarding logic
     }
@@ -55,4 +56,4 @@ as any reducer `Feature` uses under the hood, _and_ any effects produced by `Fea
 [environment-values-docs]: https://developer.apple.com/documentation/swiftui/environmentvalues
 [xctest-dynamic-overlay-gh]: http://github.com/pointfreeco/xctest-dynamic-overlay
 [swift-dependencies-gh]: http://github.com/pointfreeco/swift-dependencies
-[swift-deps-docs]: https://pointfreeco.github.io/swift-dependencies/main/documentation/dependencies/
+[swift-deps-docs]: https://swiftpackageindex.com/pointfreeco/swift-dependencies/main/documentation/dependencies

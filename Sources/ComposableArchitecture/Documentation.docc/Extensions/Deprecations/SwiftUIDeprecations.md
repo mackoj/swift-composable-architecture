@@ -8,30 +8,38 @@ Avoid using deprecated APIs in your app. Select a method to see the replacement 
 
 ## Topics
 
-### ForEachStore
+### View stores
 
-- ``ForEachStore/init(_:content:)-34mtj``
-- ``ForEachStore/init(_:id:content:)``
+- ``ViewStore``
 
-### WithViewStore
+### View containers
 
-- ``WithViewStore/init(_:content:file:line:)-1gjbi``
-- ``WithViewStore/init(_:content:file:line:)-2uj44``
-- ``WithViewStore/init(_:content:file:line:)-5vj3w``
-- ``WithViewStore/init(_:content:file:line:)-5zsmz``
-- ``WithViewStore/init(_:content:file:line:)-7kai``
-- ``WithViewStore/init(_:file:line:content:)-4xog0``
-- ``WithViewStore/init(_:file:line:content:)-55smh``
-- ``WithViewStore/init(_:file:line:content:)-7qkc1``
-- ``WithViewStore/init(_:file:line:content:)-8b21b``
-- ``WithViewStore/init(_:file:line:content:)-9b6e2``
-- ``WithViewStore/init(_:removeDuplicates:content:file:line:)-1lyhl``
-- ``WithViewStore/init(_:removeDuplicates:content:file:line:)-35xje``
-- ``WithViewStore/init(_:removeDuplicates:content:file:line:)-8zzun``
-- ``WithViewStore/init(_:removeDuplicates:content:file:line:)-9atby``
-- ``WithViewStore/init(_:removeDuplicates:file:line:content:)``
-- ``WithViewStore/Action``
-- ``WithViewStore/State``
+- ``WithViewStore``
+- ``IfLetStore``
+- ``ForEachStore``
+- ``SwitchStore``
+- ``NavigationLinkStore``
+- ``NavigationStackStore``
 
-<!--DocC: Can't currently document `View` extensions-->
-<!--### View Modifiers-->
+### View modifiers
+
+- ``SwiftUI/View/alert(store:)``
+- ``SwiftUI/View/alert(store:state:action:)``
+- ``SwiftUI/View/confirmationDialog(store:)``
+- ``SwiftUI/View/confirmationDialog(store:state:action:)``
+- ``SwiftUI/View/fullScreenCover(store:onDismiss:content:)``
+- ``SwiftUI/View/fullScreenCover(store:state:action:onDismiss:content:)``
+- ``SwiftUI/View/legacyAlert(store:)``
+- ``SwiftUI/View/legacyAlert(store:state:action:)``
+- ``SwiftUI/View/navigationDestination(store:destination:)``
+- ``SwiftUI/View/navigationDestination(store:state:action:destination:)``
+- ``SwiftUI/View/popover(store:attachmentAnchor:arrowEdge:content:)``
+- ``SwiftUI/View/popover(store:state:action:attachmentAnchor:arrowEdge:content:)``
+- ``SwiftUI/View/sheet(store:onDismiss:content:)``
+- ``SwiftUI/View/sheet(store:state:action:onDismiss:content:)``
+
+### Bindings
+
+- ``BindingState``
+- ``BindingViewState``
+- ``BindingViewStore``

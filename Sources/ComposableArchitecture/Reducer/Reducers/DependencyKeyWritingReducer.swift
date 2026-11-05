@@ -1,4 +1,4 @@
-extension ReducerProtocol {
+extension Reducer {
   /// Sets the dependency value of the specified key path to the given value.
   ///
   /// This overrides the dependency specified by `keyPath` for the execution of the receiving
@@ -11,7 +11,8 @@ extension ReducerProtocol {
   /// feature's domain and layers on additional logic:
   ///
   /// ```swift
-  /// struct Onboarding: ReducerProtocol {
+  /// @Reducer
+  /// struct Onboarding {
   ///   struct State {
   ///     var feature: Feature.State
   ///     // Additional onboarding state
@@ -21,8 +22,8 @@ extension ReducerProtocol {
   ///     // Additional onboarding actions
   ///   }
   ///
-  ///   var body: some ReducerProtocol<State, Action> {
-  ///     Scope(state: \.feature, action: /Action.feature) {
+  ///   var body: some Reducer<State, Action> {
+  ///     Scope(\.feature, action: \.feature) {
   ///       Feature()
   ///     }
   ///
@@ -44,8 +45,8 @@ extension ReducerProtocol {
   /// just for the `Feature` reducer and its effects:
   ///
   /// ```swift
-  /// var body: some ReducerProtocol<State, Action> {
-  ///   Scope(state: \.feature, action: /Action.feature) {
+  /// var body: some Reducer<State, Action> {
+  ///   Scope(\.feature, action: \.feature) {
   ///     Feature()
   ///       .dependency(\.apiClient, .mock)
   ///       .dependency(\.userDefaults, .mock)
@@ -66,15 +67,34 @@ extension ReducerProtocol {
   ///   - value: The new value to set for the item specified by `keyPath`.
   /// - Returns: A reducer that has the given value set in its dependencies.
   @inlinable
+  @warn_unqualified_access
   public func dependency<Value>(
     _ keyPath: WritableKeyPath<DependencyValues, Value>,
     _ value: Value
   )
-    // NB: We should not return `some ReducerProtocol<State, Action>` here. That would prevent the
+    // NB: We should not return `some Reducer<State, Action>` here. That would prevent the
     //     specialization defined below from being called, which fuses chained calls.
     -> _DependencyKeyWritingReducer<Self>
   {
-    _DependencyKeyWritingReducer(base: self) { $0[keyPath: keyPath] = value }
+    _DependencyKeyWritingReducer(base: self) {
+      $0[keyPath: keyPath] = value
+    }
+  }
+
+  /// Places a value in the reducer's dependencies.
+  ///
+  /// - Parameter value: The value to set for this value's type in the dependencies.
+  /// - Returns: A reducer that has the given value set in its dependencies.
+  @inlinable
+  @warn_unqualified_access
+  public func dependency<Value: TestDependencyKey>(
+    _ value: Value
+  )
+    // NB: We should not return `some Reducer<State, Action>` here. That would prevent the
+    //     specialization defined below from being called, which fuses chained calls.
+    -> _DependencyKeyWritingReducer<Self>
+  where Value.Value == Value {
+    _DependencyKeyWritingReducer(base: self) { $0[Value.self] = value }
   }
 
   /// Transform a reducer's dependency value at the specified key path with the given function.
@@ -117,19 +137,22 @@ extension ReducerProtocol {
   ///   - transform: A closure that is handed a mutable instance of the value specified by the key
   ///     path.
   @inlinable
+  @warn_unqualified_access
   public func transformDependency<V>(
     _ keyPath: WritableKeyPath<DependencyValues, V>,
-    transform: @escaping (inout V) -> Void
+    transform: @escaping (_ dependency: inout V) -> Void
   )
-    // NB: We should not return `some ReducerProtocol<State, Action>` here. That would prevent the
+    // NB: We should not return `some Reducer<State, Action>` here. That would prevent the
     //     specialization defined below from being called, which fuses chained calls.
     -> _DependencyKeyWritingReducer<Self>
   {
-    _DependencyKeyWritingReducer(base: self) { transform(&$0[keyPath: keyPath]) }
+    _DependencyKeyWritingReducer(base: self) {
+      transform(&$0[keyPath: keyPath])
+    }
   }
 }
 
-public struct _DependencyKeyWritingReducer<Base: ReducerProtocol>: ReducerProtocol {
+public struct _DependencyKeyWritingReducer<Base: Reducer>: Reducer {
   @usableFromInline
   let base: Base
 
@@ -143,13 +166,13 @@ public struct _DependencyKeyWritingReducer<Base: ReducerProtocol>: ReducerProtoc
   }
 
   @inlinable
-  public func reduce(
+  public func _reduce(
     into state: inout Base.State, action: Base.Action
-  ) -> EffectTask<Base.Action> {
+  ) -> Effect<Base.Action> {
     withDependencies {
       self.update(&$0)
     } operation: {
-      self.base.reduce(into: &state, action: action)
+      self.base._reduce(into: &state, action: action)
     }
   }
 

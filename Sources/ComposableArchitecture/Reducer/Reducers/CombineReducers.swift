@@ -6,16 +6,16 @@
 /// Useful for grouping reducers together and applying reducer modifiers to the result.
 ///
 /// ```swift
-/// var body: some ReducerProtocol<State, Action> {
+/// var body: some Reducer<State, Action> {
 ///   CombineReducers {
 ///     ReducerA()
 ///     ReducerB()
 ///     ReducerC()
 ///   }
-///   .ifLet(\.child, action: /Action.child)
+///   ._printChanges()
 /// }
 /// ```
-public struct CombineReducers<State, Action, Reducers: ReducerProtocol>: ReducerProtocol
+public struct CombineReducers<State, Action, Reducers: Reducer>: Reducer
 where State == Reducers.State, Action == Reducers.Action {
   @usableFromInline
   let reducers: Reducers
@@ -36,9 +36,9 @@ where State == Reducers.State, Action == Reducers.Action {
   }
 
   @inlinable
-  public func reduce(
+  public func _reduce(
     into state: inout Reducers.State, action: Reducers.Action
-  ) -> EffectTask<Reducers.Action> {
-    self.reducers.reduce(into: &state, action: action)
+  ) -> Effect<Reducers.Action> {
+    self.reducers._reduce(into: &state, action: action)
   }
 }

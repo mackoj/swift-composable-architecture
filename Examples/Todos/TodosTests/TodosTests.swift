@@ -1,17 +1,18 @@
 import ComposableArchitecture
-import XCTest
+import Foundation
+import Testing
 
 @testable import Todos
 
 @MainActor
-final class TodosTests: XCTestCase {
+struct TodosTests {
   let clock = TestClock()
 
-  func testAddTodo() async {
-    let store = TestStore(
-      initialState: Todos.State(),
-      reducer: Todos()
-    ) {
+  @Test
+  func add() async {
+    let store = TestStore(initialState: Todos.State()) {
+      Todos()
+    } withDependencies: {
       $0.uuid = .incrementing
     }
 
@@ -19,7 +20,7 @@ final class TodosTests: XCTestCase {
       $0.todos.insert(
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+          id: UUID(0),
           isComplete: false
         ),
         at: 0
@@ -30,69 +31,67 @@ final class TodosTests: XCTestCase {
       $0.todos = [
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+          id: UUID(1),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+          id: UUID(0),
           isComplete: false
         ),
       ]
     }
   }
 
-  func testEditTodo() async {
+  @Test
+  func edit() async {
     let state = Todos.State(
       todos: [
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+          id: UUID(0),
           isComplete: false
         )
       ]
     )
 
-    let store = TestStore(
-      initialState: state,
-      reducer: Todos()
-    )
+    let store = TestStore(initialState: state) {
+      Todos()
+    }
 
-    await store.send(
-      .todo(id: state.todos[0].id, action: .textFieldChanged("Learn Composable Architecture"))
-    ) {
-      $0.todos[id: state.todos[0].id]?.description = "Learn Composable Architecture"
+    await store.send(\.todos[id: UUID(0)].binding.description, "Learn Composable Architecture") {
+      $0.todos[id: UUID(0)]?.description = "Learn Composable Architecture"
     }
   }
 
-  func testCompleteTodo() async {
+  @Test
+  func complete() async {
     let state = Todos.State(
       todos: [
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+          id: UUID(0),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+          id: UUID(1),
           isComplete: false
         ),
       ]
     )
 
-    let store = TestStore(
-      initialState: state,
-      reducer: Todos()
-    ) {
-      $0.continuousClock = self.clock
+    let store = TestStore(initialState: state) {
+      Todos()
+    } withDependencies: {
+      $0.continuousClock = clock
     }
 
-    await store.send(.todo(id: state.todos[0].id, action: .checkBoxToggled)) {
-      $0.todos[id: state.todos[0].id]?.isComplete = true
+    await store.send(\.todos[id: UUID(0)].binding.isComplete, true) {
+      $0.todos[id: UUID(0)]?.isComplete = true
     }
-    await self.clock.advance(by: .seconds(1))
-    await store.receive(.sortCompletedTodos) {
+    await clock.advance(by: .seconds(1))
+    await store.receive(\.sortCompletedTodos) {
       $0.todos = [
         $0.todos[1],
         $0.todos[0],
@@ -100,60 +99,60 @@ final class TodosTests: XCTestCase {
     }
   }
 
-  func testCompleteTodoDebounces() async {
+  @Test
+  func completionDebounce() async {
     let state = Todos.State(
       todos: [
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+          id: UUID(0),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+          id: UUID(1),
           isComplete: false
         ),
       ]
     )
 
-    let store = TestStore(
-      initialState: state,
-      reducer: Todos()
-    ) {
-      $0.continuousClock = self.clock
+    let store = TestStore(initialState: state) {
+      Todos()
+    } withDependencies: {
+      $0.continuousClock = clock
     }
 
-    await store.send(.todo(id: state.todos[0].id, action: .checkBoxToggled)) {
-      $0.todos[id: state.todos[0].id]?.isComplete = true
+    await store.send(\.todos[id: UUID(0)].binding.isComplete, true) {
+      $0.todos[id: UUID(0)]?.isComplete = true
     }
-    await self.clock.advance(by: .milliseconds(500))
-    await store.send(.todo(id: state.todos[0].id, action: .checkBoxToggled)) {
-      $0.todos[id: state.todos[0].id]?.isComplete = false
+    await clock.advance(by: .milliseconds(500))
+    await store.send(\.todos[id: UUID(0)].binding.isComplete, false) {
+      $0.todos[id: UUID(0)]?.isComplete = false
     }
-    await self.clock.advance(by: .seconds(1))
-    await store.receive(.sortCompletedTodos)
+    await clock.advance(by: .seconds(1))
+    await store.receive(\.sortCompletedTodos)
   }
 
-  func testClearCompleted() async {
+  @Test
+  func clearCompleted() async {
     let state = Todos.State(
       todos: [
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+          id: UUID(0),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+          id: UUID(1),
           isComplete: true
         ),
       ]
     )
 
-    let store = TestStore(
-      initialState: state,
-      reducer: Todos()
-    )
+    let store = TestStore(initialState: state) {
+      Todos()
+    }
 
     await store.send(.clearCompletedButtonTapped) {
       $0.todos = [
@@ -162,31 +161,31 @@ final class TodosTests: XCTestCase {
     }
   }
 
-  func testDelete() async {
+  @Test
+  func delete() async {
     let state = Todos.State(
       todos: [
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+          id: UUID(0),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+          id: UUID(1),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+          id: UUID(2),
           isComplete: false
         ),
       ]
     )
 
-    let store = TestStore(
-      initialState: state,
-      reducer: Todos()
-    )
+    let store = TestStore(initialState: state) {
+      Todos()
+    }
 
     await store.send(.delete([1])) {
       $0.todos = [
@@ -196,32 +195,32 @@ final class TodosTests: XCTestCase {
     }
   }
 
-  func testDeleteWhileFiltered() async {
+  @Test
+  func filteredDelete() async {
     let state = Todos.State(
       filter: .completed,
       todos: [
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+          id: UUID(0),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+          id: UUID(1),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+          id: UUID(2),
           isComplete: true
         ),
       ]
     )
 
-    let store = TestStore(
-      initialState: state,
-      reducer: Todos()
-    )
+    let store = TestStore(initialState: state) {
+      Todos()
+    }
 
     await store.send(.delete([0])) {
       $0.todos = [
@@ -231,35 +230,35 @@ final class TodosTests: XCTestCase {
     }
   }
 
-  func testEditModeMoving() async {
+  @Test
+  func editModeMove() async {
     let state = Todos.State(
       todos: [
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+          id: UUID(0),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+          id: UUID(1),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+          id: UUID(2),
           isComplete: false
         ),
       ]
     )
 
-    let store = TestStore(
-      initialState: state,
-      reducer: Todos()
-    ) {
-      $0.continuousClock = self.clock
+    let store = TestStore(initialState: state) {
+      Todos()
+    } withDependencies: {
+      $0.continuousClock = clock
     }
 
-    await store.send(.editModeChanged(.active)) {
+    await store.send(\.binding.editMode, .active) {
       $0.editMode = .active
     }
     await store.send(.move([0], 2)) {
@@ -269,48 +268,48 @@ final class TodosTests: XCTestCase {
         $0.todos[2],
       ]
     }
-    await self.clock.advance(by: .milliseconds(100))
-    await store.receive(.sortCompletedTodos)
+    await clock.advance(by: .milliseconds(100))
+    await store.receive(\.sortCompletedTodos)
   }
 
-  func testEditModeMovingWithFilter() async {
+  @Test
+  func filteredEditModeMove() async {
     let state = Todos.State(
       todos: [
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+          id: UUID(0),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+          id: UUID(1),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+          id: UUID(2),
           isComplete: true
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000003")!,
+          id: UUID(3),
           isComplete: true
         ),
       ]
     )
 
-    let store = TestStore(
-      initialState: state,
-      reducer: Todos()
-    ) {
-      $0.continuousClock = self.clock
+    let store = TestStore(initialState: state) {
+      Todos()
+    } withDependencies: {
+      $0.continuousClock = clock
       $0.uuid = .incrementing
     }
 
-    await store.send(.editModeChanged(.active)) {
+    await store.send(\.binding.editMode, .active) {
       $0.editMode = .active
     }
-    await store.send(.filterPicked(.completed)) {
+    await store.send(\.binding.filter, .completed) {
       $0.filter = .completed
     }
     await store.send(.move([0], 2)) {
@@ -321,36 +320,36 @@ final class TodosTests: XCTestCase {
         $0.todos[2],
       ]
     }
-    await self.clock.advance(by: .milliseconds(100))
-    await store.receive(.sortCompletedTodos)
+    await clock.advance(by: .milliseconds(100))
+    await store.receive(\.sortCompletedTodos)
   }
 
-  func testFilteredEdit() async {
+  @Test
+  func filteredEdit() async {
     let state = Todos.State(
       todos: [
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
+          id: UUID(0),
           isComplete: false
         ),
         Todo.State(
           description: "",
-          id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+          id: UUID(1),
           isComplete: true
         ),
       ]
     )
 
-    let store = TestStore(
-      initialState: state,
-      reducer: Todos()
-    )
+    let store = TestStore(initialState: state) {
+      Todos()
+    }
 
-    await store.send(.filterPicked(.completed)) {
+    await store.send(\.binding.filter, .completed) {
       $0.filter = .completed
     }
-    await store.send(.todo(id: state.todos[1].id, action: .textFieldChanged("Did this already"))) {
-      $0.todos[id: state.todos[1].id]?.description = "Did this already"
+    await store.send(\.todos[id: UUID(1)].binding.description, "Did this already") {
+      $0.todos[id: UUID(1)]?.description = "Did this already"
     }
   }
 }

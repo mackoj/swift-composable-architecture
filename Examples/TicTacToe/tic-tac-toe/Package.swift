@@ -1,11 +1,11 @@
-// swift-tools-version:5.6
+// swift-tools-version:6.1
 
 import PackageDescription
 
 let package = Package(
   name: "tic-tac-toe",
   platforms: [
-    .iOS(.v15)
+    .iOS(.v18)
   ],
   products: [
     .library(name: "AppCore", targets: ["AppCore"]),
@@ -28,7 +28,7 @@ let package = Package(
   ],
   dependencies: [
     .package(name: "swift-composable-architecture", path: "../../.."),
-    .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "0.1.0"),
+    .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.0.0"),
   ],
   targets: [
     .target(
@@ -64,7 +64,8 @@ let package = Package(
     .target(
       name: "AuthenticationClient",
       dependencies: [
-        .product(name: "Dependencies", package: "swift-dependencies")
+        .product(name: "Dependencies", package: "swift-dependencies"),
+        .product(name: "DependenciesMacros", package: "swift-dependencies"),
       ]
     ),
     .target(
@@ -85,10 +86,6 @@ let package = Package(
     .target(
       name: "GameSwiftUI",
       dependencies: ["GameCore"]
-    ),
-    .testTarget(
-      name: "GameSwiftUITests",
-      dependencies: ["GameSwiftUI"]
     ),
     .target(
       name: "GameUIKit",
@@ -113,10 +110,6 @@ let package = Package(
         "LoginCore",
         "TwoFactorSwiftUI",
       ]
-    ),
-    .testTarget(
-      name: "LoginSwiftUITests",
-      dependencies: ["LoginSwiftUI"]
     ),
     .target(
       name: "LoginUIKit",
@@ -144,10 +137,6 @@ let package = Package(
         "NewGameCore",
       ]
     ),
-    .testTarget(
-      name: "NewGameSwiftUITests",
-      dependencies: ["NewGameSwiftUI"]
-    ),
     .target(
       name: "NewGameUIKit",
       dependencies: [
@@ -171,22 +160,10 @@ let package = Package(
       name: "TwoFactorSwiftUI",
       dependencies: ["TwoFactorCore"]
     ),
-    .testTarget(
-      name: "TwoFactorSwiftUITests",
-      dependencies: ["TwoFactorSwiftUI"]
-    ),
     .target(
       name: "TwoFactorUIKit",
       dependencies: ["TwoFactorCore"]
     ),
-  ]
+  ],
+  swiftLanguageModes: [.v6]
 )
-
-for target in package.targets {
-  target.swiftSettings = [
-    .unsafeFlags([
-      "-Xfrontend", "-enable-actor-data-race-checks",
-      "-Xfrontend", "-warn-concurrency",
-    ])
-  ]
-}

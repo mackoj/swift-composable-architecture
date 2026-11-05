@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Foundation
-import XCTestDynamicOverlay
 
+@DependencyClient
 struct FactClient {
   var fetch: @Sendable (Int) async throws -> String
 }
@@ -19,16 +19,14 @@ extension FactClient: DependencyKey {
   /// main feature doesn't need to compile it.
   static let liveValue = Self(
     fetch: { number in
-      try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+      try await Task.sleep(for: .seconds(1))
       let (data, _) = try await URLSession.shared
-        .data(from: URL(string: "http://numbersapi.com/\(number)/trivia")!)
+        .data(from: URL(string: "http://number-trivia.com/\(number)/trivia")!)
       return String(decoding: data, as: UTF8.self)
     }
   )
 
   /// This is the "unimplemented" fact dependency that is useful to plug into tests that you want
   /// to prove do not need the dependency.
-  static let testValue = Self(
-    fetch: unimplemented("\(Self.self).fetch")
-  )
+  static let testValue = Self()
 }

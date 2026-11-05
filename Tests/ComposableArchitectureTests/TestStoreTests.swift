@@ -1,9 +1,8 @@
-import Combine
+@preconcurrency import Combine
 import ComposableArchitecture
 import XCTest
 
-@MainActor
-final class TestStoreTests: XCTestCase {
+final class TestStoreTests: BaseTCATestCase {
   func testEffectConcatenation() async {
     struct State: Equatable {}
 
@@ -12,38 +11,30 @@ final class TestStoreTests: XCTestCase {
     }
 
     let mainQueue = DispatchQueue.test
-
-    let reducer = Reduce<State, Action> { _, action in
-      switch action {
-      case .a:
-        return .merge(
-          EffectTask.concatenate(.init(value: .b1), .init(value: .c1))
-            .delay(for: 1, scheduler: mainQueue)
-            .eraseToEffect(),
-          Empty(completeImmediately: false)
-            .eraseToEffect()
-            .cancellable(id: 1)
-        )
-      case .b1:
-        return
-          EffectTask
-          .concatenate(.init(value: .b2), .init(value: .b3))
-      case .c1:
-        return
-          EffectTask
-          .concatenate(.init(value: .c2), .init(value: .c3))
-      case .b2, .b3, .c2, .c3:
-        return .none
-
-      case .d:
-        return .cancel(id: 1)
+    let store = await TestStore(initialState: State()) {
+      Reduce<State, Action> { _, action in
+        switch action {
+        case .a:
+          return .merge(
+            .run { send in
+              try await mainQueue.sleep(for: .seconds(1))
+              await send(.b1)
+              await send(.c1)
+            },
+            .run { _ in try await Task.never() }
+              .cancellable(id: 1)
+          )
+        case .b1:
+          return .concatenate(.send(.b2), .send(.b3))
+        case .c1:
+          return .concatenate(.send(.c2), .send(.c3))
+        case .b2, .b3, .c2, .c3:
+          return .none
+        case .d:
+          return .cancel(id: 1)
+        }
       }
     }
-
-    let store = TestStore(
-      initialState: State(),
-      reducer: reducer
-    )
 
     await store.send(.a)
 
@@ -65,18 +56,17 @@ final class TestStoreTests: XCTestCase {
       case tap
       case response(Int)
     }
-    let store = TestStore(
-      initialState: 0,
-      reducer: Reduce<Int, Action> { state, action in
+    let store = await TestStore(initialState: 0) {
+      Reduce<Int, Action> { state, action in
         switch action {
         case .tap:
-          return .task { .response(42) }
-        case let .response(number):
+          return .run { send in await send(.response(42)) }
+        case .response(let number):
           state = number
           return .none
         }
       }
-    )
+    }
 
     await store.send(.tap)
     await store.receive(.response(42)) {
@@ -84,23 +74,55 @@ final class TestStoreTests: XCTestCase {
     }
   }
 
-  #if DEBUG
-    func testExpectedStateEquality() async {
-      struct State: Equatable {
-        var count: Int = 0
-        var isChanging: Bool = false
+  func testSettingUseMainSerialExecutorToTrue() async {
+    let store = await TestStore(initialState: 0, useMainSerialExecutor: true) {
+      Reduce<Int, Void> { state, action in
+        return .none
       }
+    }
 
-      enum Action: Equatable {
-        case increment
-        case changed(from: Int, to: Int)
+    @concurrent func runOffMainThread() async {
+      XCTAssert(Thread.isMainThread)
+    }
+
+    await runOffMainThread()
+
+    _ = store
+  }
+
+  func testSettingUseMainSerialExecutorToFalse() async {
+    let store = await TestStore(initialState: 0, useMainSerialExecutor: false) {
+      Reduce<Int, Void> { state, action in
+        return .none
       }
+    }
 
-      let reducer = Reduce<State, Action> { state, action in
+    @concurrent func runOffMainThread() async {
+      XCTAssertFalse(Thread.isMainThread)
+    }
+
+    await runOffMainThread()
+
+    _ = store
+  }
+
+  func testExpectedStateEquality() async {
+    struct State: Equatable {
+      var count: Int = 0
+      var isChanging: Bool = false
+    }
+
+    enum Action: Equatable {
+      case increment
+      case changed(from: Int, to: Int)
+    }
+
+    let store = await TestStore(initialState: State()) {
+      Reduce<State, Action> { state, action in
         switch action {
         case .increment:
           state.isChanging = true
-          return EffectTask(value: .changed(from: state.count, to: state.count + 1))
+          return .send(.changed(from: state.count, to: state.count + 1))
         case .changed(let from, let to):
           state.isChanging = false
           if state.count == from {
@@ -109,117 +131,111 @@ final class TestStoreTests: XCTestCase {
           return .none
         }
       }
-
-      let store = TestStore(initialState: State(), reducer: reducer)
-
-      await store.send(.increment) {
-        $0.isChanging = true
-      }
-      await store.receive(.changed(from: 0, to: 1)) {
-        $0.isChanging = false
-        $0.count = 1
-      }
-
-      XCTExpectFailure {
-        _ = store.send(.increment) {
-          $0.isChanging = false
-        }
-      }
-      XCTExpectFailure {
-        store.receive(.changed(from: 1, to: 2)) {
-          $0.isChanging = true
-          $0.count = 1100
-        }
-      }
     }
 
-    func testExpectedStateEqualityMustModify() async {
-      struct State: Equatable {
-        var count: Int = 0
-      }
+    await store.send(.increment) {
+      $0.isChanging = true
+    }
+    await store.receive(.changed(from: 0, to: 1)) {
+      $0.isChanging = false
+      $0.count = 1
+    }
 
-      enum Action: Equatable {
-        case noop, finished
-      }
+    XCTExpectFailure()
+    await store.send(.increment) {
+      $0.isChanging = false
+    }
 
-      let reducer = Reduce<State, Action> { state, action in
+    XCTExpectFailure()
+    await store.receive(.changed(from: 1, to: 2)) {
+      $0.isChanging = true
+      $0.count = 1100
+    }
+  }
+
+  func testExpectedStateEqualityMustModify() async {
+    struct State: Equatable {
+      var count: Int = 0
+    }
+
+    enum Action: Equatable {
+      case noop, finished
+    }
+
+    let store = await TestStore(initialState: State()) {
+      Reduce<State, Action> { state, action in
         switch action {
         case .noop:
-          return EffectTask(value: .finished)
+          return .send(.finished)
         case .finished:
           return .none
         }
       }
-
-      let store = TestStore(initialState: State(), reducer: reducer)
-
-      await store.send(.noop)
-      await store.receive(.finished)
-
-      XCTExpectFailure {
-        _ = store.send(.noop) {
-          $0.count = 0
-        }
-      }
-      XCTExpectFailure {
-        store.receive(.finished) {
-          $0.count = 0
-        }
-      }
     }
 
-    func testReceiveActionMatchingPredicate() async {
-      enum Action: Equatable {
-        case noop, finished
-      }
+    await store.send(.noop)
+    await store.receive(.finished)
 
-      let reducer = Reduce<Int, Action> { state, action in
+    XCTExpectFailure()
+    await store.send(.noop) {
+      $0.count = 0
+    }
+
+    XCTExpectFailure()
+    await store.receive(.finished) {
+      $0.count = 0
+    }
+  }
+
+  func testReceiveActionMatchingPredicate() async {
+    enum Action: Equatable {
+      case noop, finished
+    }
+
+    let store = await TestStore(initialState: 0) {
+      Reduce<Int, Action> { state, action in
         switch action {
         case .noop:
-          return EffectTask(value: .finished)
+          return .send(.finished)
         case .finished:
           return .none
         }
       }
-
-      let store = TestStore(initialState: 0, reducer: reducer)
-
-      let predicateShouldBeCalledExpectation = expectation(
-        description: "predicate should be called")
-      await store.send(.noop)
-      await store.receive { action in
-        predicateShouldBeCalledExpectation.fulfill()
-        return action == .finished
-      }
-      wait(for: [predicateShouldBeCalledExpectation], timeout: 0)
-
-      XCTExpectFailure {
-        store.send(.noop)
-        store.receive(.noop)
-      }
-
-      XCTExpectFailure {
-        store.send(.noop)
-        store.receive { $0 == .noop }
-      }
     }
-  #endif
 
+    let predicateShouldBeCalledExpectation = expectation(
+      description: "predicate should be called")
+    await store.send(.noop)
+    await store.receive { action in
+      predicateShouldBeCalledExpectation.fulfill()
+      return action == .finished
+    }
+    _ = { wait(for: [predicateShouldBeCalledExpectation], timeout: 0) }()
+
+    await store.send(.noop)
+    XCTExpectFailure()
+    await store.receive(.noop)
+
+    await store.send(.noop)
+    XCTExpectFailure()
+    await store.receive { $0 == .noop }
+  }
+
+  @MainActor
   func testStateAccess() async {
     enum Action { case a, b, c, d }
-    let store = TestStore(
-      initialState: 0,
-      reducer: Reduce<Int, Action> { count, action in
+    let store = TestStore(initialState: 0) {
+      Reduce<Int, Action> { count, action in
         switch action {
         case .a:
           count += 1
-          return .merge(.init(value: .b), .init(value: .c), .init(value: .d))
+          return .merge(.send(.b), .send(.c), .send(.d))
         case .b, .c, .d:
           count += 1
           return .none
         }
       }
-    )
+    }
 
     await store.send(.a) {
       $0 = 1
@@ -243,14 +259,15 @@ final class TestStoreTests: XCTestCase {
     XCTAssertEqual(store.state, 4)
   }
 
-  func testOverrideDependenciesDirectlyOnReducer() {
-    struct Counter: ReducerProtocol {
-      @Dependency(\.calendar) var calendar
-      @Dependency(\.locale) var locale
-      @Dependency(\.timeZone) var timeZone
-      @Dependency(\.urlSession) var urlSession
+  @Reducer
+  struct Feature_testOverrideDependenciesDirectlyOnReducer {
+    @Dependency(\.calendar) var calendar
+    @Dependency(\.locale) var locale
+    @Dependency(\.timeZone) var timeZone
+    @Dependency(\.urlSession) var urlSession
 
-      func reduce(into state: inout Int, action: Bool) -> EffectTask<Bool> {
+    var body: some Reducer<Int, Bool> {
+      Reduce { state, action in
         _ = self.calendar
         _ = self.locale
         _ = self.timeZone
@@ -259,27 +276,28 @@ final class TestStoreTests: XCTestCase {
         return .none
       }
     }
-
-    let store = TestStore(
-      initialState: 0,
-      reducer: Counter()
+  }
+  func testOverrideDependenciesDirectlyOnReducer() async {
+    let store = await TestStore(initialState: 0) {
+      Feature_testOverrideDependenciesDirectlyOnReducer()
         .dependency(\.calendar, Calendar(identifier: .gregorian))
         .dependency(\.locale, Locale(identifier: "en_US"))
         .dependency(\.timeZone, TimeZone(secondsFromGMT: 0)!)
         .dependency(\.urlSession, URLSession(configuration: .ephemeral))
-    )
+    }
 
-    store.send(true) { $0 = 1 }
+    await store.send(true) { $0 = 1 }
   }
 
-  func testOverrideDependenciesOnTestStore() {
-    struct Counter: ReducerProtocol {
-      @Dependency(\.calendar) var calendar
-      @Dependency(\.locale) var locale
-      @Dependency(\.timeZone) var timeZone
-      @Dependency(\.urlSession) var urlSession
+  @Reducer
+  struct Feature_testOverrideDependenciesOnTestStore {
+    @Dependency(\.calendar) var calendar
+    @Dependency(\.locale) var locale
+    @Dependency(\.timeZone) var timeZone
+    @Dependency(\.urlSession) var urlSession
 
-      func reduce(into state: inout Int, action: Bool) -> EffectTask<Bool> {
+    var body: some Reducer<Int, Bool> {
+      Reduce { state, action in
         _ = self.calendar
         _ = self.locale
         _ = self.timeZone
@@ -288,52 +306,58 @@ final class TestStoreTests: XCTestCase {
         return .none
       }
     }
-
-    let store = TestStore(
-      initialState: 0,
-      reducer: Counter()
-    )
+  }
+  @MainActor
+  func testOverrideDependenciesOnTestStore() async {
+    let store = TestStore(initialState: 0) {
+      Feature_testOverrideDependenciesOnTestStore()
+    }
     store.dependencies.calendar = Calendar(identifier: .gregorian)
     store.dependencies.locale = Locale(identifier: "en_US")
     store.dependencies.timeZone = TimeZone(secondsFromGMT: 0)!
     store.dependencies.urlSession = URLSession(configuration: .ephemeral)
 
-    store.send(true) { $0 = 1 }
+    await store.send(true) { $0 = 1 }
   }
 
-  func testOverrideDependenciesOnTestStore_MidwayChange() {
-    struct Counter: ReducerProtocol {
-      @Dependency(\.date.now) var now
+  @Reducer
+  struct Feature_testOverrideDependenciesOnTestStore_MidwayChange {
+    @Dependency(\.date.now) var now
 
-      func reduce(into state: inout Int, action: ()) -> EffectTask<Void> {
+    var body: some Reducer<Int, Void> {
+      Reduce { state, _ in
         state = Int(self.now.timeIntervalSince1970)
         return .none
       }
     }
-
-    let store = TestStore(
-      initialState: 0,
-      reducer: Counter()
-    ) {
+  }
+  @MainActor
+  func testOverrideDependenciesOnTestStore_MidwayChange() async {
+    let store = TestStore(initialState: 0) {
+      Feature_testOverrideDependenciesOnTestStore_MidwayChange()
+    } withDependencies: {
       $0.date.now = Date(timeIntervalSince1970: 1_234_567_890)
     }
 
-    store.send(()) { $0 = 1_234_567_890 }
+    await store.send(()) { $0 = 1_234_567_890 }
 
     store.dependencies.date.now = Date(timeIntervalSince1970: 987_654_321)
 
-    store.send(()) { $0 = 987_654_321 }
+    await store.send(()) { $0 = 987_654_321 }
   }
 
-  func testOverrideDependenciesOnTestStore_Init() {
-    struct Counter: ReducerProtocol {
-      @Dependency(\.calendar) var calendar
-      @Dependency(\.locale) var locale
-      @Dependency(\.timeZone) var timeZone
-      @Dependency(\.urlSession) var urlSession
+  @Reducer
+  struct Feature_testOverrideDependenciesOnTestStore_Init {
+    @Dependency(\.calendar) var calendar
+    @Dependency(\.client.fetch) var fetch
+    @Dependency(\.locale) var locale
+    @Dependency(\.timeZone) var timeZone
+    @Dependency(\.urlSession) var urlSession
 
-      func reduce(into state: inout Int, action: Bool) -> EffectTask<Bool> {
+    var body: some Reducer<Int, Bool> {
+      Reduce { state, action in
         _ = self.calendar
+        _ = self.fetch()
         _ = self.locale
         _ = self.timeZone
         _ = self.urlSession
@@ -341,52 +365,54 @@ final class TestStoreTests: XCTestCase {
         return .none
       }
     }
-
-    let store = TestStore(
-      initialState: 0,
-      reducer: Counter()
-    ) {
+  }
+  func testOverrideDependenciesOnTestStore_Init() async {
+    let store = await TestStore(initialState: 0) {
+      Feature_testOverrideDependenciesOnTestStore_Init()
+    } withDependencies: {
       $0.calendar = Calendar(identifier: .gregorian)
+      $0.client.fetch = { 1 }
       $0.locale = Locale(identifier: "en_US")
       $0.timeZone = TimeZone(secondsFromGMT: 0)!
       $0.urlSession = URLSession(configuration: .ephemeral)
     }
 
-    store.send(true) { $0 = 1 }
+    await store.send(true) { $0 = 1 }
   }
 
-  func testDependenciesEarlyBinding() async {
-    struct Feature: ReducerProtocol {
-      struct State: Equatable {
-        var count = 0
-        var date: Date
-        init() {
-          @Dependency(\.date.now) var now: Date
-          self.date = now
-        }
+  @Reducer
+  struct Feature_testDependenciesEarlyBinding {
+    struct State: Equatable {
+      var count = 0
+      var date: Date
+      init() {
+        @Dependency(\.date.now) var now: Date
+        self.date = now
       }
-      enum Action: Equatable {
-        case tap
-        case response(Int)
-      }
-      @Dependency(\.date.now) var now: Date
-      func reduce(into state: inout State, action: Action) -> EffectTask<Action> {
+    }
+    enum Action: Equatable {
+      case tap
+      case response(Int)
+    }
+    @Dependency(\.date.now) var now: Date
+    var body: some Reducer<State, Action> {
+      Reduce { state, action in
         switch action {
         case .tap:
           state.count += 1
-          return .task { .response(42) }
-        case let .response(number):
+          return .run { send in await send(.response(42)) }
+        case .response(let number):
           state.count = number
           state.date = now
           return .none
         }
       }
     }
-
-    let store = TestStore(
-      initialState: Feature.State(),
-      reducer: Feature()
-    ) {
+  }
+  func testDependenciesEarlyBinding() async {
+    let store = await TestStore(initialState: Feature_testDependenciesEarlyBinding.State()) {
+      Feature_testDependenciesEarlyBinding()
+    } withDependencies: {
       $0.date = .constant(Date(timeIntervalSince1970: 1_234_567_890))
     }
 
@@ -399,6 +425,322 @@ final class TestStoreTests: XCTestCase {
       @Dependency(\.date.now) var now: Date
       $0.count = 42
       $0.date = now
+    }
+  }
+
+  @MainActor
+  func testPrepareDependenciesCalledOnce() {
+    var count = 0
+    let store = TestStore(initialState: 0) {
+      EmptyReducer<Int, Void>()
+    } withDependencies: { _ in
+      count += 1
+    }
+
+    XCTAssertEqual(count, 1)
+    _ = store
+  }
+
+  func testEffectEmitAfterSkipInFlightEffects() async {
+    let mainQueue = DispatchQueue.test
+    enum Action: Equatable { case tap, response }
+    let store = await TestStore(initialState: 0) {
+      Reduce<Int, Action> { state, action in
+        switch action {
+        case .tap:
+          return .run { send in
+            try await mainQueue.sleep(for: .seconds(1))
+            await send(.response)
+          }
+        case .response:
+          state = 42
+          return .none
+        }
+      }
+    }
+
+    await store.send(.tap)
+    await store.skipInFlightEffects()
+    await mainQueue.advance(by: .seconds(1))
+    await store.receive(.response) {
+      $0 = 42
+    }
+  }
+
+  @MainActor
+  func testAssert_NonExhaustiveTestStore() async {
+    let store = TestStore(initialState: 0) {
+      EmptyReducer<Int, Void>()
+    }
+    store.exhaustivity = .off
+
+    store.assert {
+      $0 = 0
+    }
+  }
+
+  @MainActor
+  func testAssert_NonExhaustiveTestStore_Failure() async {
+    let store = TestStore(initialState: 0) {
+      EmptyReducer<Int, Void>()
+    }
+    store.exhaustivity = .off
+
+    XCTExpectFailure {
+      store.assert {
+        $0 = 1
+      }
+    } issueMatcher: {
+      $0.compactDescription.hasSuffix(
+        """
+        A state change does not match expectation.
+
+            − 1
+            + 0
+
+        (Expected: −, Actual: +)
+        """
+      )
+    }
+  }
+
+  @MainActor
+  func testSubscribeReceiveCombineScheduler() async {
+    let subject = PassthroughSubject<Void, Never>()
+    let scheduler = DispatchQueue.test
+
+    struct State: Equatable {
+      var count: Int = 0
+    }
+
+    enum Action: Equatable {
+      case increment
+      case start
+    }
+
+    let store = TestStore(initialState: State()) {
+      Reduce<State, Action> { state, action in
+        switch action {
+        case .start:
+          return .publisher {
+            subject
+              .subscribe(on: scheduler)
+              .receive(on: scheduler)
+              .map { .increment }
+          }
+        case .increment:
+          state.count += 1
+          return .none
+        }
+      }
+    }
+
+    let task = await store.send(.start)
+    await scheduler.advance()
+    subject.send()
+    await scheduler.advance()
+    await store.receive(.increment) { $0.count = 1 }
+    await task.cancel()
+  }
+
+  func testMainSerialExecutor_AutoAssignsAndResets_False() async {
+    uncheckedUseMainSerialExecutor = false
+    XCTAssertFalse(uncheckedUseMainSerialExecutor)
+    var store: TestStore? = await TestStore(initialState: 0) {
+      EmptyReducer<Int, Void>()
+    }
+    XCTAssertTrue(uncheckedUseMainSerialExecutor)
+    store = nil
+    XCTAssertFalse(uncheckedUseMainSerialExecutor)
+    _ = store
+  }
+
+  func testMainSerialExecutor_AutoAssignsAndResets_True() async {
+    uncheckedUseMainSerialExecutor = true
+    XCTAssertTrue(uncheckedUseMainSerialExecutor)
+    var store: TestStore? = await TestStore(initialState: 0) {
+      EmptyReducer<Int, Void>()
+    }
+    XCTAssertTrue(uncheckedUseMainSerialExecutor)
+    store = nil
+    XCTAssertTrue(uncheckedUseMainSerialExecutor)
+    _ = store
+  }
+
+  func testReceiveCaseKeyPathWithValue() async {
+    let store = await TestStore<Int, Action>(initialState: 0) {
+      Reduce { state, action in
+        switch action {
+        case .tap:
+          return .send(.delegate(.success(42)))
+        case .delegate:
+          return .none
+        case .view:
+          return .none
+        }
+      }
+    }
+
+    await store.send(.tap)
+    await store.receive(\.delegate.success, 42)
+
+    XCTExpectFailure {
+      $0.compactDescription.hasSuffix(
+        """
+        Received unexpected action:
+
+            Action.delegate(
+          −   .success(43)
+          +   .success(42)
+            )
+
+        (Expected: −, Actual: +)
+        """
+      )
+    }
+    await store.send(.tap)
+    await store.receive(\.delegate.success, 43)
+  }
+
+  func testSendCaseKeyPath() async {
+    let store = await TestStore<Int, Action>(initialState: 0) {
+      Reduce { state, action in
+        switch action {
+        case .tap:
+          return .send(.delegate(.success(42)))
+        case .delegate:
+          return .none
+        case .view(.tap):
+          state = state + 1
+          return .send(.delegate(.success(42 * 42)))
+        case .view(.delete(let indexSet)):
+          let sum = indexSet.reduce(0, +)
+          if sum == 42 {
+            state = state + 1
+          }
+          return .send(.delegate(.success(sum)))
+        }
+      }
+    }
+    await store.send(\.tap)
+    await store.receive(\.delegate.success, 42)
+
+    await store.send(\.view.tap) {
+      $0 = 1
+    }
+    await store.receive(\.delegate.success, 42 * 42)
+
+    await store.send(\.view.delete, [0])
+    await store.receive(\.delegate.success, 0)
+
+    await store.send(\.view.delete, [19, 23]) {
+      $0 = 2
+    }
+    await store.receive(\.delegate.success, 42)
+  }
+
+  func testBindingTestStore_WhenStateAndActionHaveSameName() async {
+    let store = await TestStore(initialState: .init()) {
+      SameNameForStateAndAction()
+    }
+    await store.send(.onAppear)
+    await store.receive(\.isOn)
+    await store.receive(\.binding.isOn) {
+      $0.isOn = true
+    }
+  }
+
+  @Reducer
+  struct TestDismissCancelsEffects {
+    struct State: Equatable {}
+    enum Action {
+      case dismiss
+      case onTask
+    }
+    @Dependency(\.dismiss) var dismiss
+    var body: some ReducerOf<Self> {
+      Reduce { state, action in
+        switch action {
+        case .dismiss:
+          return .run { _ in
+            await dismiss()
+          }
+        case .onTask:
+          return .run { _ in
+            try await Task.never()
+          }
+        }
+      }
+    }
+  }
+
+  func testDismissCancelsEffects() async {
+    let store = await TestStore(initialState: TestDismissCancelsEffects.State()) {
+      TestDismissCancelsEffects()
+    }
+    await store.send(.onTask)
+    await store.send(.dismiss)
+  }
+
+  func testDismissedStoreSend() async {
+    let store = await TestStore(initialState: TestDismissCancelsEffects.State()) {
+      TestDismissCancelsEffects()
+    }
+    await store.send(.dismiss)
+    XCTExpectFailure {
+      $0.compactDescription.hasSuffix("Can't send action to dismissed test store.")
+    }
+    await store.send(.onTask)
+  }
+}
+
+private struct Client: DependencyKey {
+  var fetch: @Sendable () -> Int
+  static let liveValue = Client(fetch: { 42 })
+}
+extension DependencyValues {
+  fileprivate var client: Client {
+    get { self[Client.self] }
+    set { self[Client.self] = newValue }
+  }
+}
+
+@CasePathable
+private enum Action {
+  case tap
+  case delegate(Delegate)
+  case view(View)
+  @CasePathable
+  enum Delegate {
+    case success(Int)
+  }
+  @CasePathable
+  enum View {
+    case tap
+    case delete(IndexSet)
+  }
+}
+
+@Reducer
+struct SameNameForStateAndAction {
+  @ObservableState
+  struct State: Equatable { var isOn = false }
+  enum Action: BindableAction {
+    case binding(BindingAction<State>)
+    case onAppear
+    case isOn(Bool)
+  }
+  var body: some ReducerOf<Self> {
+    BindingReducer()
+    Reduce { state, action in
+      switch action {
+      case .binding:
+        return .none
+      case .onAppear:
+        return .send(.isOn(true))
+      case .isOn:
+        return .send(.set(\.isOn, true))
+      }
     }
   }
 }

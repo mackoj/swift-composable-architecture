@@ -1,35 +1,31 @@
 import ComposableArchitecture
 import GameCore
 
-public struct NewGame: ReducerProtocol {
+@Reducer
+public struct NewGame {
+  @ObservableState
   public struct State: Equatable {
-    public var game: Game.State?
+    @Presents public var game: Game.State?
     public var oPlayerName = ""
     public var xPlayerName = ""
 
     public init() {}
   }
 
-  public enum Action: Equatable {
-    case game(Game.Action)
-    case gameDismissed
+  public enum Action: BindableAction {
+    case binding(BindingAction<State>)
+    case game(PresentationAction<Game.Action>)
     case letsPlayButtonTapped
     case logoutButtonTapped
-    case oPlayerNameChanged(String)
-    case xPlayerNameChanged(String)
   }
 
   public init() {}
 
-  public var body: some ReducerProtocol<State, Action> {
+  public var body: some Reducer<State, Action> {
+    BindingReducer()
     Reduce { state, action in
       switch action {
-      case .game(.quitButtonTapped):
-        state.game = nil
-        return .none
-
-      case .gameDismissed:
-        state.game = nil
+      case .binding:
         return .none
 
       case .game:
@@ -44,17 +40,9 @@ public struct NewGame: ReducerProtocol {
 
       case .logoutButtonTapped:
         return .none
-
-      case let .oPlayerNameChanged(name):
-        state.oPlayerName = name
-        return .none
-
-      case let .xPlayerNameChanged(name):
-        state.xPlayerName = name
-        return .none
       }
     }
-    .ifLet(\.game, action: /NewGame.Action.game) {
+    .ifLet(\.$game, action: \.game) {
       Game()
     }
   }

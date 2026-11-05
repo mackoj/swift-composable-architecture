@@ -1,23 +1,26 @@
 import Combine
-import ComposableArchitecture
+@_spi(Internals) import ComposableArchitecture
 import XCTest
 
-@MainActor
-final class EffectDebounceTests: XCTestCase {
-  var cancellables: Set<AnyCancellable> = []
-
+@available(*, deprecated)
+final class EffectDebounceTests: BaseTCATestCase {
+  @MainActor
   func testDebounce() async {
     let mainQueue = DispatchQueue.test
     var values: [Int] = []
 
-    // NB: Explicit @MainActor is needed for Swift 5.5.2
-    @MainActor func runDebouncedEffect(value: Int) {
-      struct CancelToken: Hashable {}
-      Just(value)
-        .eraseToEffect()
-        .debounce(id: CancelToken(), for: 1, scheduler: mainQueue)
-        .sink { values.append($0) }
-        .store(in: &self.cancellables)
+    @discardableResult
+    func runDebouncedEffect(value: Int) -> Task<Void, Never> {
+      Task {
+        struct CancelToken: Hashable {}
+
+        let effect = Effect.send(value)
+          .debounce(id: CancelToken(), for: 1, scheduler: mainQueue)
+
+        for await action in effect.actions {
+          values.append(action)
+        }
+      }
     }
 
     runDebouncedEffect(value: 1)
@@ -52,23 +55,29 @@ final class EffectDebounceTests: XCTestCase {
     XCTAssertEqual(values, [3])
   }
 
+  @MainActor
   func testDebounceIsLazy() async {
     let mainQueue = DispatchQueue.test
     var values: [Int] = []
     var effectRuns = 0
 
-    // NB: Explicit @MainActor is needed for Swift 5.5.2
-    @MainActor func runDebouncedEffect(value: Int) {
-      struct CancelToken: Hashable {}
+    @discardableResult
+    func runDebouncedEffect(value: Int) -> Task<Void, Never> {
+      Task {
+        struct CancelToken: Hashable {}
 
-      Deferred { () -> Just<Int> in
-        effectRuns += 1
-        return Just(value)
+        let effect = Effect.publisher {
+          Deferred { () -> Just<Int> in
+            effectRuns += 1
+            return Just(1)
+          }
+        }
+        .debounce(id: CancelToken(), for: 1, scheduler: mainQueue)
+
+        for await action in effect.actions {
+          values.append(action)
+        }
       }
-      .eraseToEffect()
-      .debounce(id: CancelToken(), for: 1, scheduler: mainQueue)
-      .sink { values.append($0) }
-      .store(in: &self.cancellables)
     }
 
     runDebouncedEffect(value: 1)

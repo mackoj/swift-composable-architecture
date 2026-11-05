@@ -1,15 +1,15 @@
 import ComposableArchitecture
-import XCTest
+import Testing
 
 @testable import SwiftUICaseStudies
 
 @MainActor
-final class AlertsAndConfirmationDialogsTests: XCTestCase {
-  func testAlert() async {
-    let store = TestStore(
-      initialState: AlertAndConfirmationDialog.State(),
-      reducer: AlertAndConfirmationDialog()
-    )
+struct AlertsAndConfirmationDialogsTests {
+  @Test
+  func alert() async {
+    let store = TestStore(initialState: AlertAndConfirmationDialog.State()) {
+      AlertAndConfirmationDialog()
+    }
 
     await store.send(.alertButtonTapped) {
       $0.alert = AlertState {
@@ -25,20 +25,20 @@ final class AlertsAndConfirmationDialogsTests: XCTestCase {
         TextState("This is an alert")
       }
     }
-    await store.send(.incrementButtonTapped) {
+    await store.send(\.alert.incrementButtonTapped) {
       $0.alert = AlertState { TextState("Incremented!") }
       $0.count = 1
     }
-    await store.send(.alertDismissed) {
+    await store.send(\.alert.dismiss) {
       $0.alert = nil
     }
   }
 
-  func testConfirmationDialog() async {
-    let store = TestStore(
-      initialState: AlertAndConfirmationDialog.State(),
-      reducer: AlertAndConfirmationDialog()
-    )
+  @Test
+  func confirmationDialog() async {
+    let store = TestStore(initialState: AlertAndConfirmationDialog.State()) {
+      AlertAndConfirmationDialog()
+    }
 
     await store.send(.confirmationDialogButtonTapped) {
       $0.confirmationDialog = ConfirmationDialogState {
@@ -57,12 +57,10 @@ final class AlertsAndConfirmationDialogsTests: XCTestCase {
         TextState("This is a confirmation dialog.")
       }
     }
-    await store.send(.incrementButtonTapped) {
+    await store.send(\.confirmationDialog.incrementButtonTapped) {
       $0.alert = AlertState { TextState("Incremented!") }
-      $0.count = 1
-    }
-    await store.send(.confirmationDialogDismissed) {
       $0.confirmationDialog = nil
+      $0.count = 1
     }
   }
 }

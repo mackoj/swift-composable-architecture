@@ -12,18 +12,14 @@ public struct AppView: View {
   }
 
   public var body: some View {
-    SwitchStore(self.store) {
-      CaseLet(state: /TicTacToe.State.login, action: TicTacToe.Action.login) { store in
-        NavigationView {
-          LoginView(store: store)
-        }
-        .navigationViewStyle(.stack)
+    switch store.case {
+    case .login(let store):
+      NavigationStack {
+        LoginView(store: store)
       }
-      CaseLet(state: /TicTacToe.State.newGame, action: TicTacToe.Action.newGame) { store in
-        NavigationView {
-          NewGameView(store: store)
-        }
-        .navigationViewStyle(.stack)
+    case .newGame(let store):
+      NavigationStack {
+        NewGameView(store: store)
       }
     }
   }

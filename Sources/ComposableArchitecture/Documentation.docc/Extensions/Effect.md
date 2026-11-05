@@ -1,40 +1,41 @@
-# ``ComposableArchitecture/EffectTask``
+# ``ComposableArchitecture/Effect``
 
 ## Topics
 
 ### Creating an effect
 
-- ``EffectPublisher/none``
-- ``EffectPublisher/task(priority:operation:catch:file:fileID:line:)``
-- ``EffectPublisher/run(priority:operation:catch:file:fileID:line:)``
-- ``EffectPublisher/fireAndForget(priority:_:)``
-- ``EffectPublisher/send(_:)``
-- ``TaskResult``
+- ``none``
+- ``run(priority:operation:catch:fileID:filePath:line:column:)``
+- ``send(_:)``
+- ``EffectOf``
 
 ### Cancellation
 
-- ``EffectPublisher/cancellable(id:cancelInFlight:)-29q60``
-- ``EffectPublisher/cancel(id:)-6hzsl``
-- ``EffectPublisher/cancel(ids:)-1cqqx``
-- ``withTaskCancellation(id:cancelInFlight:operation:)-4dtr6``
+- ``cancellable(id:cancelInFlight:)``
+- ``cancel(id:)``
+- ``ComposableArchitecture/withTaskCancellation(id:cancelInFlight:isolation:operation:)``
+- ``_Concurrency/Task/cancel(id:)``
 
 ### Composition
 
-- ``EffectPublisher/map(_:)-yn70``
-- ``EffectPublisher/merge(_:)-45guh``
-- ``EffectPublisher/merge(_:)-3d54p``
-
-### Concurrency
-
-- ``UncheckedSendable``
-
-### Testing
-
-- ``EffectPublisher/unimplemented(_:)``
+- ``map(_:)``
+- ``merge(_:)-5ai73``
+- ``merge(_:)-8ckqn``
+- ``merge(with:)``
+- ``concatenate(_:)-3iza9``
+- ``concatenate(_:)-4gba2``
+- ``concatenate(with:)``
 
 ### SwiftUI integration
 
-- ``EffectPublisher/animation(_:)``
+- ``animation(_:)``
+- ``transaction(_:)``
+
+### Combine integration
+
+- ``publisher(_:)``
+- ``debounce(id:for:scheduler:options:)``
+- ``throttle(id:for:scheduler:latest:)``
 
 ### Deprecations
 

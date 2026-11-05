@@ -1,348 +1,133 @@
 /// A result builder for combining reducers into a single reducer by running each, one after the
-/// other, and returning their merged effects.
+/// other, and merging their effects.
 ///
-/// It is most common to encounter a reducer builder context when conforming a type to
-/// ``ReducerProtocol`` and implementing its ``ReducerProtocol/body-swift.property-97ymy`` property.
+/// It is most common to encounter a reducer builder context when conforming a type to ``Reducer``
+/// and implementing its ``Reducer/body-swift.property`` property.
 ///
 /// See ``CombineReducers`` for an entry point into a reducer builder context.
 @resultBuilder
 public enum ReducerBuilder<State, Action> {
+  #if ComposableArchitecture2Deprecations
+    @available(
+      *,
+      deprecated,
+      message: "Please file a GitHub issue with your use case if you'd like to see it supported"
+    )
+  #else
+    @available(
+      iOS,
+      deprecated: 9999,
+      message: "Please file a GitHub issue with your use case if you'd like to see it supported"
+    )
+    @available(
+      macOS,
+      deprecated: 9999,
+      message: "Please file a GitHub issue with your use case if you'd like to see it supported"
+    )
+    @available(
+      tvOS,
+      deprecated: 9999,
+      message: "Please file a GitHub issue with your use case if you'd like to see it supported"
+    )
+    @available(
+      watchOS,
+      deprecated: 9999,
+      message: "Please file a GitHub issue with your use case if you'd like to see it supported"
+    )
+  #endif
   @inlinable
-  public static func buildArray<R: ReducerProtocol>(_ reducers: [R]) -> _SequenceMany<R>
-  where R.State == State, R.Action == Action {
+  public static func buildArray(
+    _ reducers: [some Reducer<State, Action>]
+  ) -> some Reducer<State, Action> {
     _SequenceMany(reducers: reducers)
   }
 
   @inlinable
-  public static func buildBlock() -> EmptyReducer<State, Action> {
+  public static func buildBlock() -> some Reducer<State, Action> {
     EmptyReducer()
   }
 
   @inlinable
-  public static func buildBlock<R: ReducerProtocol>(_ reducer: R) -> R
-  where R.State == State, R.Action == Action {
+  public static func buildBlock<R: Reducer<State, Action>>(_ reducer: R) -> R {
     reducer
   }
 
   @inlinable
-  public static func buildEither<R0: ReducerProtocol, R1: ReducerProtocol>(
+  public static func buildEither<R0: Reducer<State, Action>, R1: Reducer<State, Action>>(
     first reducer: R0
-  ) -> _Conditional<R0, R1>
-  where R0.State == State, R0.Action == Action, R1.State == State, R1.Action == Action {
+  ) -> _Conditional<R0, R1> {
     .first(reducer)
   }
 
   @inlinable
-  public static func buildEither<R0: ReducerProtocol, R1: ReducerProtocol>(
+  public static func buildEither<R0: Reducer<State, Action>, R1: Reducer<State, Action>>(
     second reducer: R1
-  ) -> _Conditional<R0, R1>
-  where R0.State == State, R0.Action == Action, R1.State == State, R1.Action == Action {
+  ) -> _Conditional<R0, R1> {
     .second(reducer)
   }
 
   @inlinable
-  public static func buildExpression<R: ReducerProtocol>(_ expression: R) -> R
-  where R.State == State, R.Action == Action {
+  public static func buildExpression<R: Reducer<State, Action>>(_ expression: R) -> R {
     expression
   }
 
   @inlinable
-  public static func buildFinalResult<R: ReducerProtocol>(_ reducer: R) -> R
-  where R.State == State, R.Action == Action {
+  @_disfavoredOverload
+  public static func buildExpression(
+    _ expression: any Reducer<State, Action>
+  ) -> Reduce<State, Action> {
+    Reduce(expression)
+  }
+
+  @inlinable
+  public static func buildFinalResult<R: Reducer<State, Action>>(_ reducer: R) -> R {
     reducer
   }
 
   @inlinable
-  public static func buildLimitedAvailability<R: ReducerProtocol>(
-    _ wrapped: R
-  ) -> Reduce<State, Action>
-  where R.State == State, R.Action == Action {
+  public static func buildLimitedAvailability(
+    _ wrapped: some Reducer<State, Action>
+  ) -> Reduce<State, Action> {
     Reduce(wrapped)
   }
 
   @inlinable
-  public static func buildOptional<R: ReducerProtocol>(_ wrapped: R?) -> R?
-  where R.State == State, R.Action == Action {
+  public static func buildOptional<R: Reducer<State, Action>>(_ wrapped: R?) -> R? {
     wrapped
   }
 
   @inlinable
-  public static func buildPartialBlock<R: ReducerProtocol>(
-    first: R
-  ) -> R
-  where R.State == State, R.Action == Action {
+  public static func buildPartialBlock<R: Reducer<State, Action>>(first: R) -> R {
     first
   }
 
   @inlinable
-  public static func buildPartialBlock<R0: ReducerProtocol, R1: ReducerProtocol>(
-    accumulated: R0, next: R1
-  ) -> _Sequence<R0, R1>
-  where R0.State == State, R0.Action == Action, R1.State == State, R1.Action == Action {
+  public static func buildPartialBlock<R0: Reducer<State, Action>, R1: Reducer<State, Action>>(
+    accumulated: R0,
+    next: R1
+  ) -> _Sequence<R0, R1> {
     _Sequence(accumulated, next)
   }
 
-  #if swift(<5.7)
-    @inlinable
-    public static func buildBlock<
-      R0: ReducerProtocol,
-      R1: ReducerProtocol
-    >(
-      _ r0: R0,
-      _ r1: R1
-    ) -> _Sequence<R0, R1>
-    where R0.State == State, R0.Action == Action {
-      _Sequence(r0, r1)
-    }
-
-    @inlinable
-    public static func buildBlock<
-      R0: ReducerProtocol,
-      R1: ReducerProtocol,
-      R2: ReducerProtocol
-    >(
-      _ r0: R0,
-      _ r1: R1,
-      _ r2: R2
-    ) -> _Sequence<_Sequence<R0, R1>, R2>
-    where R0.State == State, R0.Action == Action {
-      _Sequence(_Sequence(r0, r1), r2)
-    }
-
-    @inlinable
-    public static func buildBlock<
-      R0: ReducerProtocol,
-      R1: ReducerProtocol,
-      R2: ReducerProtocol,
-      R3: ReducerProtocol
-    >(
-      _ r0: R0,
-      _ r1: R1,
-      _ r2: R2,
-      _ r3: R3
-    ) -> _Sequence<_Sequence<_Sequence<R0, R1>, R2>, R3>
-    where R0.State == State, R0.Action == Action {
-      _Sequence(_Sequence(_Sequence(r0, r1), r2), r3)
-    }
-
-    @inlinable
-    public static func buildBlock<
-      R0: ReducerProtocol,
-      R1: ReducerProtocol,
-      R2: ReducerProtocol,
-      R3: ReducerProtocol,
-      R4: ReducerProtocol
-    >(
-      _ r0: R0,
-      _ r1: R1,
-      _ r2: R2,
-      _ r3: R3,
-      _ r4: R4
-    ) -> _Sequence<_Sequence<_Sequence<_Sequence<R0, R1>, R2>, R3>, R4>
-    where R0.State == State, R0.Action == Action {
-      _Sequence(_Sequence(_Sequence(_Sequence(r0, r1), r2), r3), r4)
-    }
-
-    @inlinable
-    public static func buildBlock<
-      R0: ReducerProtocol,
-      R1: ReducerProtocol,
-      R2: ReducerProtocol,
-      R3: ReducerProtocol,
-      R4: ReducerProtocol,
-      R5: ReducerProtocol
-    >(
-      _ r0: R0,
-      _ r1: R1,
-      _ r2: R2,
-      _ r3: R3,
-      _ r4: R4,
-      _ r5: R5
-    ) -> _Sequence<_Sequence<_Sequence<_Sequence<_Sequence<R0, R1>, R2>, R3>, R4>, R5>
-    where R0.State == State, R0.Action == Action {
-      _Sequence(_Sequence(_Sequence(_Sequence(_Sequence(r0, r1), r2), r3), r4), r5)
-    }
-
-    @inlinable
-    public static func buildBlock<
-      R0: ReducerProtocol,
-      R1: ReducerProtocol,
-      R2: ReducerProtocol,
-      R3: ReducerProtocol,
-      R4: ReducerProtocol,
-      R5: ReducerProtocol,
-      R6: ReducerProtocol
-    >(
-      _ r0: R0,
-      _ r1: R1,
-      _ r2: R2,
-      _ r3: R3,
-      _ r4: R4,
-      _ r5: R5,
-      _ r6: R6
-    ) -> _Sequence<
-      _Sequence<_Sequence<_Sequence<_Sequence<_Sequence<R0, R1>, R2>, R3>, R4>, R5>, R6
-    >
-    where R0.State == State, R0.Action == Action {
-      _Sequence(_Sequence(_Sequence(_Sequence(_Sequence(_Sequence(r0, r1), r2), r3), r4), r5), r6)
-    }
-
-    @inlinable
-    public static func buildBlock<
-      R0: ReducerProtocol,
-      R1: ReducerProtocol,
-      R2: ReducerProtocol,
-      R3: ReducerProtocol,
-      R4: ReducerProtocol,
-      R5: ReducerProtocol,
-      R6: ReducerProtocol,
-      R7: ReducerProtocol
-    >(
-      _ r0: R0,
-      _ r1: R1,
-      _ r2: R2,
-      _ r3: R3,
-      _ r4: R4,
-      _ r5: R5,
-      _ r6: R6,
-      _ r7: R7
-    ) -> _Sequence<
-      _Sequence<_Sequence<_Sequence<_Sequence<_Sequence<_Sequence<R0, R1>, R2>, R3>, R4>, R5>, R6>,
-      R7
-    >
-    where R0.State == State, R0.Action == Action {
-      _Sequence(
-        _Sequence(
-          _Sequence(_Sequence(_Sequence(_Sequence(_Sequence(r0, r1), r2), r3), r4), r5), r6
-        ),
-        r7
-      )
-    }
-
-    @inlinable
-    public static func buildBlock<
-      R0: ReducerProtocol,
-      R1: ReducerProtocol,
-      R2: ReducerProtocol,
-      R3: ReducerProtocol,
-      R4: ReducerProtocol,
-      R5: ReducerProtocol,
-      R6: ReducerProtocol,
-      R7: ReducerProtocol,
-      R8: ReducerProtocol
-    >(
-      _ r0: R0,
-      _ r1: R1,
-      _ r2: R2,
-      _ r3: R3,
-      _ r4: R4,
-      _ r5: R5,
-      _ r6: R6,
-      _ r7: R7,
-      _ r8: R8
-    ) -> _Sequence<
-      _Sequence<
-        _Sequence<
-          _Sequence<_Sequence<_Sequence<_Sequence<_Sequence<R0, R1>, R2>, R3>, R4>, R5>, R6
-        >,
-        R7
-      >,
-      R8
-    >
-    where R0.State == State, R0.Action == Action {
-      _Sequence(
-        _Sequence(
-          _Sequence(
-            _Sequence(_Sequence(_Sequence(_Sequence(_Sequence(r0, r1), r2), r3), r4), r5), r6
-          ),
-          r7
-        ),
-        r8
-      )
-    }
-
-    @inlinable
-    public static func buildBlock<
-      R0: ReducerProtocol,
-      R1: ReducerProtocol,
-      R2: ReducerProtocol,
-      R3: ReducerProtocol,
-      R4: ReducerProtocol,
-      R5: ReducerProtocol,
-      R6: ReducerProtocol,
-      R7: ReducerProtocol,
-      R8: ReducerProtocol,
-      R9: ReducerProtocol
-    >(
-      _ r0: R0,
-      _ r1: R1,
-      _ r2: R2,
-      _ r3: R3,
-      _ r4: R4,
-      _ r5: R5,
-      _ r6: R6,
-      _ r7: R7,
-      _ r8: R8,
-      _ r9: R9
-    ) -> _Sequence<
-      _Sequence<
-        _Sequence<
-          _Sequence<
-            _Sequence<_Sequence<_Sequence<_Sequence<_Sequence<R0, R1>, R2>, R3>, R4>, R5>, R6
-          >,
-          R7
-        >,
-        R8
-      >,
-      R9
-    >
-    where R0.State == State, R0.Action == Action {
-      _Sequence(
-        _Sequence(
-          _Sequence(
-            _Sequence(
-              _Sequence(_Sequence(_Sequence(_Sequence(_Sequence(r0, r1), r2), r3), r4), r5), r6
-            ),
-            r7
-          ),
-          r8
-        ),
-        r9
-      )
-    }
-
-    @_disfavoredOverload
-    @inlinable
-    public static func buildFinalResult<R: ReducerProtocol>(_ reducer: R) -> Reduce<State, Action>
-    where R.State == State, R.Action == Action {
-      Reduce(reducer)
-    }
-  #endif
-
-  public enum _Conditional<First: ReducerProtocol, Second: ReducerProtocol>: ReducerProtocol
-  where
-    First.State == Second.State,
-    First.Action == Second.Action
-  {
+  public enum _Conditional<First: Reducer, Second: Reducer<First.State, First.Action>>: Reducer {
     case first(First)
     case second(Second)
 
     @inlinable
-    public func reduce(into state: inout First.State, action: First.Action) -> EffectTask<
+    public func _reduce(into state: inout First.State, action: First.Action) -> Effect<
       First.Action
     > {
       switch self {
-      case let .first(first):
-        return first.reduce(into: &state, action: action)
+      case .first(let first):
+        return first._reduce(into: &state, action: action)
 
-      case let .second(second):
-        return second.reduce(into: &state, action: action)
+      case .second(let second):
+        return second._reduce(into: &state, action: action)
       }
     }
   }
 
-  public struct _Sequence<R0: ReducerProtocol, R1: ReducerProtocol>: ReducerProtocol
-  where R0.State == R1.State, R0.Action == R1.Action {
+  public struct _Sequence<R0: Reducer, R1: Reducer<R0.State, R0.Action>>: Reducer {
     @usableFromInline
     let r0: R0
 
@@ -356,13 +141,13 @@ public enum ReducerBuilder<State, Action> {
     }
 
     @inlinable
-    public func reduce(into state: inout R0.State, action: R0.Action) -> EffectTask<R0.Action> {
-      self.r0.reduce(into: &state, action: action)
-        .merge(with: self.r1.reduce(into: &state, action: action))
+    public func _reduce(into state: inout R0.State, action: R0.Action) -> Effect<R0.Action> {
+      self.r0._reduce(into: &state, action: action)
+        .merge(with: self.r1._reduce(into: &state, action: action))
     }
   }
 
-  public struct _SequenceMany<Element: ReducerProtocol>: ReducerProtocol {
+  public struct _SequenceMany<Element: Reducer>: Reducer {
     @usableFromInline
     let reducers: [Element]
 
@@ -372,10 +157,11 @@ public enum ReducerBuilder<State, Action> {
     }
 
     @inlinable
-    public func reduce(
-      into state: inout Element.State, action: Element.Action
-    ) -> EffectTask<Element.Action> {
-      self.reducers.reduce(.none) { $0.merge(with: $1.reduce(into: &state, action: action)) }
+    public func _reduce(
+      into state: inout Element.State,
+      action: Element.Action
+    ) -> Effect<Element.Action> {
+      self.reducers.reduce(.none) { $0.merge(with: $1._reduce(into: &state, action: action)) }
     }
   }
 }

@@ -4,31 +4,25 @@ Review unsupported test store APIs and their replacements.
 
 ## Overview
 
-Avoid using deprecated APIs in your app. Select a method to see the replacement that you should use instead.
+Avoid using deprecated APIs in your app. Select a method to see the replacement that you should use
+instead.
 
 ## Topics
 
-### Creating a test store
+### Nanosecond timeouts
 
-- ``TestStore/init(initialState:reducer:environment:file:line:)``
+- ``TestStore/finish(timeout:fileID:file:line:column:)-7kh9u``
+- ``TestStore/receive(_:timeout:assert:fileID:file:line:column:)-39wbm``
+- ``TestStore/receive(_:timeout:assert:fileID:file:line:column:)-8stm2``
+- ``TestStore/receive(_:timeout:assert:fileID:file:line:column:)-6peg7``
+- ``TestStore/receive(_:_:timeout:assert:fileID:file:line:column:)-3i3n6``
 
-### Configuring a test store
+### Case path deprecations
 
-- ``TestStore/environment``
+- ``TestStore/receive(_:timeout:assert:fileID:file:line:column:)-9ckw3``
+- ``TestStore/bindings(action:)-7aomj``
 
-### Testing reducers
+### Bindings
 
-- ``TestStore/send(_:assert:file:line:)-30pjj``
-- ``TestStore/receive(_:assert:file:line:)-2nhm0``
-- ``TestStore/receive(_:assert:file:line:)-6fuav``
-- ``TestStore/receive(_:assert:file:line:)-u5tf``
-- ``TestStore/assert(_:file:line:)-707lb``
-- ``TestStore/assert(_:file:line:)-4gff7``
-- ``TestStore/LocalState``
-- ``TestStore/LocalAction``
-- ``TestStore/Step``
-
-### Methods for skipping tests
-
-- ``TestStore/skipReceivedActions(strict:file:line:)-3nldt``
-- ``TestStore/skipInFlightEffects(strict:file:line:)-95n5f``
+- ``TestStore/bindings``
+- ``TestStore/bindings(action:)-2nhb5``

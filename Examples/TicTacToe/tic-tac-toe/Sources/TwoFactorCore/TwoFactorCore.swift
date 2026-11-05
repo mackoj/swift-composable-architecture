@@ -3,9 +3,11 @@ import Combine
 import ComposableArchitecture
 import Dispatch
 
-public struct TwoFactor: ReducerProtocol, Sendable {
+@Reducer
+public struct TwoFactor: Sendable {
+  @ObservableState
   public struct State: Equatable {
-    public var alert: AlertState<Action>?
+    @Presents public var alert: AlertState<Action.Alert>?
     public var code = ""
     public var isFormValid = false
     public var isTwoFactorRequestInFlight = false
@@ -16,49 +18,57 @@ public struct TwoFactor: ReducerProtocol, Sendable {
     }
   }
 
-  public enum Action: Equatable {
-    case alertDismissed
-    case codeChanged(String)
-    case submitButtonTapped
-    case twoFactorResponse(TaskResult<AuthenticationResponse>)
-  }
+  public enum Action: Sendable, ViewAction {
+    case alert(PresentationAction<Alert>)
+    case twoFactorResponse(Result<AuthenticationResponse, any Error>)
+    case view(View)
 
-  public enum TearDownToken {}
+    public enum Alert: Equatable, Sendable {}
+
+    @CasePathable
+    public enum View: BindableAction, Sendable {
+      case binding(BindingAction<State>)
+      case submitButtonTapped
+    }
+  }
 
   @Dependency(\.authenticationClient) var authenticationClient
 
   public init() {}
 
-  public func reduce(into state: inout State, action: Action) -> EffectTask<Action> {
-    switch action {
-    case .alertDismissed:
-      state.alert = nil
-      return .none
+  public var body: some ReducerOf<Self> {
+    BindingReducer(action: \.view)
+    Reduce { state, action in
+      switch action {
+      case .alert:
+        return .none
 
-    case let .codeChanged(code):
-      state.code = code
-      state.isFormValid = code.count >= 4
-      return .none
+      case .twoFactorResponse(.failure(let error)):
+        state.alert = AlertState { TextState(error.localizedDescription) }
+        state.isTwoFactorRequestInFlight = false
+        return .none
 
-    case .submitButtonTapped:
-      state.isTwoFactorRequestInFlight = true
-      return .task { [code = state.code, token = state.token] in
-        .twoFactorResponse(
-          await TaskResult {
-            try await self.authenticationClient.twoFactor(.init(code: code, token: token))
-          }
-        )
+      case .twoFactorResponse(.success):
+        state.isTwoFactorRequestInFlight = false
+        return .none
+
+      case .view(.binding):
+        state.isFormValid = state.code.count >= 4
+        return .none
+
+      case .view(.submitButtonTapped):
+        state.isTwoFactorRequestInFlight = true
+        return .run { [code = state.code, token = state.token] send in
+          await send(
+            .twoFactorResponse(
+              await Result {
+                try await self.authenticationClient.twoFactor(code: code, token: token)
+              }
+            )
+          )
+        }
       }
-      .cancellable(id: TearDownToken.self)
-
-    case let .twoFactorResponse(.failure(error)):
-      state.alert = AlertState { TextState(error.localizedDescription) }
-      state.isTwoFactorRequestInFlight = false
-      return .none
-
-    case .twoFactorResponse(.success):
-      state.isTwoFactorRequestInFlight = false
-      return .none
     }
+    .ifLet(\.$alert, action: \.alert)
   }
 }

@@ -3,82 +3,80 @@ import ComposableArchitecture
 import Dispatch
 import TwoFactorCore
 
-public struct Login: ReducerProtocol, Sendable {
+@Reducer
+public struct Login: Sendable {
+  @ObservableState
   public struct State: Equatable {
-    public var alert: AlertState<Action>?
+    @Presents public var alert: AlertState<Action.Alert>?
     public var email = ""
     public var isFormValid = false
     public var isLoginRequestInFlight = false
     public var password = ""
-    public var twoFactor: TwoFactor.State?
+    @Presents public var twoFactor: TwoFactor.State?
 
     public init() {}
   }
 
-  public enum Action: Equatable {
-    case alertDismissed
-    case emailChanged(String)
-    case passwordChanged(String)
-    case loginButtonTapped
-    case loginResponse(TaskResult<AuthenticationResponse>)
-    case twoFactor(TwoFactor.Action)
-    case twoFactorDismissed
+  public enum Action: Sendable, ViewAction {
+    case alert(PresentationAction<Alert>)
+    case loginResponse(Result<AuthenticationResponse, any Error>)
+    case twoFactor(PresentationAction<TwoFactor.Action>)
+    case view(View)
+
+    public enum Alert: Equatable, Sendable {}
+
+    @CasePathable
+    public enum View: BindableAction, Sendable {
+      case binding(BindingAction<State>)
+      case loginButtonTapped
+    }
   }
 
   @Dependency(\.authenticationClient) var authenticationClient
 
   public init() {}
 
-  public var body: some ReducerProtocol<State, Action> {
+  public var body: some Reducer<State, Action> {
+    BindingReducer(action: \.view)
     Reduce { state, action in
       switch action {
-      case .alertDismissed:
-        state.alert = nil
+      case .alert:
         return .none
 
-      case let .emailChanged(email):
-        state.email = email
-        state.isFormValid = !state.email.isEmpty && !state.password.isEmpty
-        return .none
-
-      case let .loginResponse(.success(response)):
+      case .loginResponse(.success(let response)):
         state.isLoginRequestInFlight = false
         if response.twoFactorRequired {
           state.twoFactor = TwoFactor.State(token: response.token)
         }
         return .none
 
-      case let .loginResponse(.failure(error)):
+      case .loginResponse(.failure(let error)):
         state.alert = AlertState { TextState(error.localizedDescription) }
         state.isLoginRequestInFlight = false
         return .none
 
-      case let .passwordChanged(password):
-        state.password = password
-        state.isFormValid = !state.email.isEmpty && !state.password.isEmpty
-        return .none
-
-      case .loginButtonTapped:
-        state.isLoginRequestInFlight = true
-        return .task { [email = state.email, password = state.password] in
-          .loginResponse(
-            await TaskResult {
-              try await self.authenticationClient.login(
-                .init(email: email, password: password)
-              )
-            }
-          )
-        }
-
       case .twoFactor:
         return .none
 
-      case .twoFactorDismissed:
-        state.twoFactor = nil
-        return .cancel(id: TwoFactor.TearDownToken.self)
+      case .view(.binding):
+        state.isFormValid = !state.email.isEmpty && !state.password.isEmpty
+        return .none
+
+      case .view(.loginButtonTapped):
+        state.isLoginRequestInFlight = true
+        return .run { [email = state.email, password = state.password] send in
+          await send(
+            .loginResponse(
+              Result {
+                try await self.authenticationClient.login(email: email, password: password)
+              }
+            )
+          )
+        }
       }
     }
-    .ifLet(\.twoFactor, action: /Action.twoFactor) {
+    .ifLet(\.$alert, action: \.alert)
+    .ifLet(\.$twoFactor, action: \.twoFactor) {
       TwoFactor()
     }
   }

@@ -1,6 +1,7 @@
 import ComposableArchitecture
 
-struct Root: ReducerProtocol {
+@Reducer
+struct Root {
   struct State {
     var focus = Focus.State()
   }
@@ -9,8 +10,8 @@ struct Root: ReducerProtocol {
     case focus(Focus.Action)
   }
 
-  var body: some ReducerProtocol<State, Action> {
-    Scope(state: \.focus, action: /Action.focus) {
+  var body: some Reducer<State, Action> {
+    Scope(\.focus, action: \.focus) {
       Focus()
     }
   }

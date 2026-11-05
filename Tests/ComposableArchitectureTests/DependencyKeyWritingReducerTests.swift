@@ -1,8 +1,7 @@
 import ComposableArchitecture
 import XCTest
 
-@MainActor
-final class DependencyKeyWritingReducerTests: XCTestCase {
+final class DependencyKeyWritingReducerTests: BaseTCATestCase {
   func testWritingFusion() async {
     let reducer: _DependencyKeyWritingReducer<Feature> = Feature()
       .dependency(\.myValue, 42)
@@ -26,14 +25,11 @@ final class DependencyKeyWritingReducerTests: XCTestCase {
   }
 
   func testWritingFusionOrder() async {
-    let reducer = Feature()
-      .dependency(\.myValue, 42)
-      .dependency(\.myValue, 1729)
-
-    let store = TestStore(
-      initialState: Feature.State(),
-      reducer: reducer
-    )
+    let store = await TestStore(initialState: Feature.State()) {
+      Feature()
+        .dependency(\.myValue, 42)
+        .dependency(\.myValue, 1729)
+    }
 
     await store.send(.tap) {
       $0.value = 42
@@ -41,14 +37,11 @@ final class DependencyKeyWritingReducerTests: XCTestCase {
   }
 
   func testTransformFusionOrder() async {
-    let reducer = Feature()
-      .transformDependency(\.myValue) { $0 = 42 }
-      .transformDependency(\.myValue) { $0 = 1729 }
-
-    let store = TestStore(
-      initialState: Feature.State(),
-      reducer: reducer
-    )
+    let store = await TestStore(initialState: Feature.State()) {
+      Feature()
+        .transformDependency(\.myValue) { $0 = 42 }
+        .transformDependency(\.myValue) { $0 = 1729 }
+    }
 
     await store.send(.tap) {
       $0.value = 42
@@ -56,16 +49,13 @@ final class DependencyKeyWritingReducerTests: XCTestCase {
   }
 
   func testWritingOrder() async {
-    let reducer = CombineReducers {
-      Feature()
-        .dependency(\.myValue, 42)
+    let store = await TestStore(initialState: Feature.State()) {
+      CombineReducers {
+        Feature()
+          .dependency(\.myValue, 42)
+      }
+      .dependency(\.myValue, 1729)
     }
-    .dependency(\.myValue, 1729)
-
-    let store = TestStore(
-      initialState: Feature.State(),
-      reducer: reducer
-    )
 
     await store.send(.tap) {
       $0.value = 42
@@ -73,54 +63,52 @@ final class DependencyKeyWritingReducerTests: XCTestCase {
   }
 
   func testTransformOrder() async {
-    let reducer = CombineReducers {
-      Feature()
-        .transformDependency(\.myValue) { $0 = 42 }
+    let store = await TestStore(initialState: Feature.State()) {
+      CombineReducers {
+        Feature()
+          .transformDependency(\.myValue) { $0 = 42 }
+      }
+      .transformDependency(\.myValue) { $0 = 1729 }
     }
-    .transformDependency(\.myValue) { $0 = 1729 }
-
-    let store = TestStore(
-      initialState: Feature.State(),
-      reducer: reducer
-    )
 
     await store.send(.tap) {
       $0.value = 42
     }
   }
 
-  func testDependency_EffectOfEffect() async {
-    struct Feature: ReducerProtocol {
-      struct State: Equatable { var count = 0 }
-      enum Action: Equatable {
-        case tap
-        case response(Int)
-        case otherResponse(Int)
-      }
-      @Dependency(\.myValue) var myValue
+  @Reducer
+  fileprivate struct Feature_testDependency_EffectOfEffect {
+    struct State: Equatable { var count = 0 }
+    enum Action: Equatable {
+      case tap
+      case response(Int)
+      case otherResponse(Int)
+    }
+    @Dependency(\.myValue) var myValue
 
-      func reduce(into state: inout State, action: Action) -> EffectTask<Action> {
+    var body: some Reducer<State, Action> {
+      Reduce { state, action in
         switch action {
         case .tap:
           state.count += 1
-          return .task { .response(self.myValue) }
+          return .run { send in await send(.response(self.myValue)) }
 
-        case let .response(value):
+        case .response(let value):
           state.count = value
-          return .task { .otherResponse(self.myValue) }
+          return .run { send in await send(.otherResponse(self.myValue)) }
 
-        case let .otherResponse(value):
+        case .otherResponse(let value):
           state.count = value
           return .none
         }
       }
     }
-
-    let store = TestStore(
-      initialState: Feature.State(),
-      reducer: Feature()
+  }
+  func testDependency_EffectOfEffect() async {
+    let store = await TestStore(initialState: Feature_testDependency_EffectOfEffect.State()) {
+      Feature_testDependency_EffectOfEffect()
         .dependency(\.myValue, 42)
-    )
+    }
 
     await store.send(.tap) {
       $0.count = 1
@@ -132,15 +120,18 @@ final class DependencyKeyWritingReducerTests: XCTestCase {
   }
 }
 
-private struct Feature: ReducerProtocol {
+@Reducer
+private struct Feature {
   @Dependency(\.myValue) var myValue
   struct State: Equatable { var value = 0 }
   enum Action { case tap }
-  func reduce(into state: inout State, action: Action) -> EffectTask<Action> {
-    switch action {
-    case .tap:
-      state.value = self.myValue
-      return .none
+  var body: some Reducer<State, Action> {
+    Reduce { state, action in
+      switch action {
+      case .tap:
+        state.value = self.myValue
+        return .none
+      }
     }
   }
 }

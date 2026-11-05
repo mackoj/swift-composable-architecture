@@ -1,37 +1,37 @@
-import Combine
 import ComposableArchitecture
-import SwiftUI
 import UIKit
 
-struct LazyNavigation: ReducerProtocol {
+@Reducer
+struct LazyNavigation {
+  @ObservableState
   struct State: Equatable {
     var optionalCounter: Counter.State?
     var isActivityIndicatorHidden = true
   }
 
-  enum Action: Equatable {
+  enum Action {
     case onDisappear
     case optionalCounter(Counter.Action)
     case setNavigation(isActive: Bool)
     case setNavigationIsActiveDelayCompleted
   }
 
-  private enum CancelID {}
+  private enum CancelID { case load }
   @Dependency(\.continuousClock) var clock
 
-  var body: some ReducerProtocol<State, Action> {
+  var body: some Reducer<State, Action> {
     Reduce { state, action in
       switch action {
       case .onDisappear:
-        return .cancel(id: CancelID.self)
+        return .cancel(id: CancelID.load)
 
       case .setNavigation(isActive: true):
         state.isActivityIndicatorHidden = false
-        return .task {
+        return .run { send in
           try await self.clock.sleep(for: .seconds(1))
-          return .setNavigationIsActiveDelayCompleted
+          await send(.setNavigationIsActiveDelayCompleted)
         }
-        .cancellable(id: CancelID.self)
+        .cancellable(id: CancelID.load)
 
       case .setNavigation(isActive: false):
         state.optionalCounter = nil
@@ -46,20 +46,17 @@ struct LazyNavigation: ReducerProtocol {
         return .none
       }
     }
-    .ifLet(\.optionalCounter, action: /Action.optionalCounter) {
+    .ifLet(\.optionalCounter, action: \.optionalCounter) {
       Counter()
     }
   }
 }
 
-class LazyNavigationViewController: UIViewController {
-  var cancellables: [AnyCancellable] = []
-  let store: StoreOf<LazyNavigation>
-  let viewStore: ViewStoreOf<LazyNavigation>
+final class LazyNavigationViewController: UIViewController {
+  private let store: StoreOf<LazyNavigation>
 
   init(store: StoreOf<LazyNavigation>) {
     self.store = store
-    self.viewStore = ViewStore(store)
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -70,9 +67,9 @@ class LazyNavigationViewController: UIViewController {
   override func viewDidLoad() {
     super.viewDidLoad()
 
-    self.title = "Load then navigate"
+    title = "Load then navigate"
 
-    self.view.backgroundColor = .systemBackground
+    view.backgroundColor = .systemBackground
 
     let button = UIButton(type: .system)
     button.addTarget(self, action: #selector(loadOptionalCounterTapped), for: .touchUpInside)
@@ -86,60 +83,51 @@ class LazyNavigationViewController: UIViewController {
       activityIndicator,
     ])
     rootStackView.translatesAutoresizingMaskIntoConstraints = false
-    self.view.addSubview(rootStackView)
+    view.addSubview(rootStackView)
 
     NSLayoutConstraint.activate([
-      rootStackView.centerXAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.centerXAnchor),
-      rootStackView.centerYAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.centerYAnchor),
+      rootStackView.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
+      rootStackView.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),
     ])
 
-    self.viewStore.publisher.isActivityIndicatorHidden
-      .assign(to: \.isHidden, on: activityIndicator)
-      .store(in: &self.cancellables)
+    observe { [weak self] in
+      guard let self else { return }
+      activityIndicator.isHidden = store.isActivityIndicatorHidden
 
-    self.store
-      .scope(state: \.optionalCounter, action: LazyNavigation.Action.optionalCounter)
-      .ifLet(
-        then: { [weak self] store in
-          self?.navigationController?.pushViewController(
-            CounterViewController(store: store), animated: true)
-        },
-        else: { [weak self] in
-          guard let self = self else { return }
-          _ = self.navigationController?.popToViewController(self, animated: true)
-        }
-      )
-      .store(in: &self.cancellables)
+      if let store = store.scope(\.optionalCounter, action: \.optionalCounter) {
+        navigationController?.pushViewController(
+          CounterViewController(store: store), animated: true
+        )
+      } else {
+        navigationController?.popToViewController(self, animated: true)
+      }
+    }
   }
 
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
 
-    if !self.isMovingToParent {
-      self.viewStore.send(.setNavigation(isActive: false))
+    if !isMovingToParent && store.optionalCounter != nil {
+      store.send(.setNavigation(isActive: false))
     }
   }
 
   @objc private func loadOptionalCounterTapped() {
-    self.viewStore.send(.setNavigation(isActive: true))
+    store.send(.setNavigation(isActive: true))
   }
 
   override func viewDidDisappear(_ animated: Bool) {
     super.viewDidDisappear(animated)
-    self.viewStore.send(.onDisappear)
+    store.send(.onDisappear)
   }
 }
 
-struct LazyNavigationViewController_Previews: PreviewProvider {
-  static var previews: some View {
-    let vc = UINavigationController(
-      rootViewController: LazyNavigationViewController(
-        store: Store(
-          initialState: LazyNavigation.State(),
-          reducer: LazyNavigation()
-        )
-      )
+#Preview {
+  UINavigationController(
+    rootViewController: LazyNavigationViewController(
+      store: Store(initialState: LazyNavigation.State()) {
+        LazyNavigation()
+      }
     )
-    return UIViewRepresented(makeUIView: { _ in vc.view })
-  }
+  )
 }

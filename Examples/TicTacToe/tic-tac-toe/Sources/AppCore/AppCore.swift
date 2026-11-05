@@ -1,32 +1,20 @@
-import AuthenticationClient
 import ComposableArchitecture
-import Dispatch
 import LoginCore
 import NewGameCore
 
-public struct TicTacToe: ReducerProtocol {
-  public enum State: Equatable {
-    case login(Login.State)
-    case newGame(NewGame.State)
+@Reducer
+public enum TicTacToe {
+  case login(Login)
+  case newGame(NewGame)
 
-    public init() { self = .login(Login.State()) }
-  }
-
-  public enum Action: Equatable {
-    case login(Login.Action)
-    case newGame(NewGame.Action)
-  }
-
-  public init() {}
-
-  public var body: some ReducerProtocol<State, Action> {
+  public static var body: some ReducerOf<Self> {
     Reduce { state, action in
       switch action {
-      case .login(.twoFactor(.twoFactorResponse(.success))):
+      case .login(.twoFactor(.presented(.twoFactorResponse(.success)))):
         state = .newGame(NewGame.State())
         return .none
 
-      case let .login(.loginResponse(.success(response))) where !response.twoFactorRequired:
+      case .login(.loginResponse(.success(let response))) where !response.twoFactorRequired:
         state = .newGame(NewGame.State())
         return .none
 
@@ -41,11 +29,12 @@ public struct TicTacToe: ReducerProtocol {
         return .none
       }
     }
-    .ifCaseLet(/State.login, action: /Action.login) {
+    .ifCaseLet(\.login, action: \.login) {
       Login()
     }
-    .ifCaseLet(/State.newGame, action: /Action.newGame) {
+    .ifCaseLet(\.newGame, action: \.newGame) {
       NewGame()
     }
   }
 }
+extension TicTacToe.State: Equatable {}

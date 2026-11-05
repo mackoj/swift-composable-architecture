@@ -1,25 +1,23 @@
 import ComposableArchitecture
-import XCTest
+import Testing
 
 @testable import tvOSCaseStudies
 
 @MainActor
-final class tvOSCaseStudiesTests: XCTestCase {
-  func testFocus() async {
-    let store = TestStore(
-      initialState: Focus.State(currentFocus: 1),
-      reducer: Focus()
-    ) {
-      $0.withRandomNumberGenerator = .init(LCRNG())
-    }
+@Test
+func focus() async {
+  let store = TestStore(initialState: Focus.State(currentFocus: 1)) {
+    Focus()
+  } withDependencies: {
+    $0.withRandomNumberGenerator = .init(LCRNG())
+  }
 
-    await store.send(.randomButtonClicked)
-    await store.send(.randomButtonClicked) {
-      $0.currentFocus = 4
-    }
-    await store.send(.randomButtonClicked) {
-      $0.currentFocus = 9
-    }
+  await store.send(.randomButtonClicked)
+  await store.send(.randomButtonClicked) {
+    $0.currentFocus = 4
+  }
+  await store.send(.randomButtonClicked) {
+    $0.currentFocus = 9
   }
 }
 

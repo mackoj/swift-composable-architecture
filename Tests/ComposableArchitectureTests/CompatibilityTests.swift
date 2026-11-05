@@ -2,13 +2,12 @@ import Combine
 import ComposableArchitecture
 import XCTest
 
-@MainActor
-final class CompatibilityTests: XCTestCase {
-  var cancellables: Set<AnyCancellable> = []
-
+final class CompatibilityTests: BaseTCATestCase {
   // Actions can be re-entrantly sent into the store if an action is sent that holds an object
   // which sends an action on deinit. In order to prevent a simultaneous access exception for this
   // case we need to use `withExtendedLifetime` on the buffered actions when clearing them out.
+  @available(*, deprecated)
+  @MainActor
   func testCaseStudy_ActionReentranceFromClearedBufferCausingDeinitAction() {
     let cancelID = UUID()
 
@@ -41,10 +40,7 @@ final class CompatibilityTests: XCTestCase {
 
       switch action {
       case .start:
-        return
-          passThroughSubject
-          .eraseToEffect()
-          .cancellable(id: cancelID)
+        return .publisher { passThroughSubject }.cancellable(id: cancelID)
 
       case .kickOffAction:
         return .send(.actionSender(OnDeinit { passThroughSubject.send(.stop) }))
@@ -57,10 +53,9 @@ final class CompatibilityTests: XCTestCase {
       }
     }
 
-    let store = Store(
-      initialState: .init(),
-      reducer: reducer
-    )
+    let store = Store(initialState: .init()) {
+      reducer
+    }
 
     let viewStore = ViewStore(store, observe: { $0 })
 
@@ -85,31 +80,39 @@ final class CompatibilityTests: XCTestCase {
   // In particular, this means that in the implementation of `Store.send` we need to flip
   // `isSending` to false _after_ the store's state mutation is made so that re-entrant actions
   // are buffered rather than immediately handled.
+  @available(*, deprecated)
+  @MainActor
   func testCaseStudy_ActionReentranceFromStateObservation() {
-    let store = Store<Int, Int>(
-      initialState: 0,
-      reducer: Reduce { state, action in
+    var cancellables: Set<AnyCancellable> = []
+    defer { _ = cancellables }
+
+    let store = Store<Int, Int>(initialState: 0) {
+      Reduce { state, action in
         state = action
         return .none
       }
-    )
+    }
 
     let viewStore = ViewStore(store, observe: { $0 })
 
     viewStore.publisher
       .sink { value in
         if value == 1 {
-          viewStore.send(0)
+          XCTExpectFailure {
+            _ = viewStore.send(0)
+          } issueMatcher: {
+            $0.compactDescription.contains("Reentrant actions are undefined")
+          }
         }
       }
-      .store(in: &self.cancellables)
+      .store(in: &cancellables)
 
     var stateChanges: [Int] = []
     viewStore.publisher
       .sink {
         stateChanges.append($0)
       }
-      .store(in: &self.cancellables)
+      .store(in: &cancellables)
 
     XCTAssertEqual(stateChanges, [0])
     viewStore.send(1)

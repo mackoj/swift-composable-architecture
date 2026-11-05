@@ -1,12 +1,14 @@
 import ComposableArchitecture
 import SwiftUI
 
-public struct Game: ReducerProtocol {
+@Reducer
+public struct Game: Sendable {
+  @ObservableState
   public struct State: Equatable {
     public var board: Three<Three<Player?>> = .empty
     public var currentPlayer: Player = .x
-    public var oPlayerName: String
-    public var xPlayerName: String
+    public let oPlayerName: String
+    public let xPlayerName: String
 
     public init(oPlayerName: String, xPlayerName: String) {
       self.oPlayerName = oPlayerName
@@ -21,41 +23,47 @@ public struct Game: ReducerProtocol {
     }
   }
 
-  public enum Action: Equatable, Sendable {
+  public enum Action: Sendable {
     case cellTapped(row: Int, column: Int)
     case playAgainButtonTapped
     case quitButtonTapped
   }
 
+  @Dependency(\.dismiss) var dismiss
+
   public init() {}
 
-  public func reduce(into state: inout State, action: Action) -> EffectTask<Action> {
-    switch action {
-    case let .cellTapped(row, column):
-      guard
-        state.board[row][column] == nil,
-        !state.board.hasWinner
-      else { return .none }
+  public var body: some Reducer<State, Action> {
+    Reduce { state, action in
+      switch action {
+      case .cellTapped(let row, let column):
+        guard
+          state.board[row][column] == nil,
+          !state.board.hasWinner
+        else { return .none }
 
-      state.board[row][column] = state.currentPlayer
+        state.board[row][column] = state.currentPlayer
 
-      if !state.board.hasWinner {
-        state.currentPlayer.toggle()
+        if !state.board.hasWinner {
+          state.currentPlayer.toggle()
+        }
+
+        return .none
+
+      case .playAgainButtonTapped:
+        state = Game.State(oPlayerName: state.oPlayerName, xPlayerName: state.xPlayerName)
+        return .none
+
+      case .quitButtonTapped:
+        return .run { _ in
+          await self.dismiss()
+        }
       }
-
-      return .none
-
-    case .playAgainButtonTapped:
-      state = Game.State(oPlayerName: state.oPlayerName, xPlayerName: state.xPlayerName)
-      return .none
-
-    case .quitButtonTapped:
-      return .none
     }
   }
 }
 
-public enum Player: Equatable {
+public enum Player: Equatable, Sendable {
   case o
   case x
 
@@ -74,7 +82,7 @@ public enum Player: Equatable {
   }
 }
 
-extension Three where Element == Three<Player?> {
+extension Three<Three<Player?>> {
   public static let empty = Self(
     .init(nil, nil, nil),
     .init(nil, nil, nil),

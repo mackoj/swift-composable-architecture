@@ -49,30 +49,39 @@ day-to-day when building applications, such as:
 
 - <doc:GettingStarted>
 - <doc:DependencyManagement>
-- <doc:Testing>
+- <doc:TestingTCA>
+- <doc:Navigation>
+- <doc:SharingState>
 - <doc:Performance>
+- <doc:FAQ>
 
-### Upgrade guides
+### Tutorials
 
-- <doc:SwiftConcurrency>
-- <doc:MigratingToTheReducerProtocol>
+- <doc:MeetComposableArchitecture>
+- <doc:BuildingSyncUps>
 
 ### State management
 
-- ``ReducerProtocol``
-- ``EffectTask``
+- ``Reducer``
+- ``Effect``
 - ``Store``
-- ``ViewStore``
-
-### Integrations
-
-- <doc:SwiftUI>
-- <doc:UIKit>
+- <doc:SharingState>
 
 ### Testing
 
-- <doc:Testing>
 - ``TestStore``
+- <doc:TestingTCA>
+
+### Integrations
+
+- <doc:SwiftConcurrency>
+- <doc:SwiftUIIntegration>
+- <doc:ObservationBackport>
+- <doc:UIKit>
+
+### Migration guides
+
+- <doc:MigrationGuides>
 
 ## See Also
 

@@ -1,23 +1,24 @@
 import ComposableArchitecture
-import XCTest
+import Foundation
+import Testing
 
 @testable import Search
 
 @MainActor
-final class SearchTests: XCTestCase {
-  func testSearchAndClearQuery() async {
-    let store = TestStore(
-      initialState: Search.State(),
-      reducer: Search()
-    ) {
-      $0.weatherClient.search = { _ in .mock }
+struct SearchTests {
+  @Test
+  func searchAndClearQuery() async {
+    let store = TestStore(initialState: Search.State()) {
+      Search()
+    } withDependencies: {
+      $0.weatherClient.search = { @Sendable _ in .mock }
     }
 
     await store.send(.searchQueryChanged("S")) {
       $0.searchQuery = "S"
     }
     await store.send(.searchQueryChangeDebounced)
-    await store.receive(.searchResponse(.success(.mock))) {
+    await store.receive(\.searchResponse.success) {
       $0.results = GeocodingSearch.mock.results
     }
     await store.send(.searchQueryChanged("")) {
@@ -26,27 +27,30 @@ final class SearchTests: XCTestCase {
     }
   }
 
-  func testSearchFailure() async {
-    let store = TestStore(
-      initialState: Search.State(),
-      reducer: Search()
-    ) {
-      $0.weatherClient.search = { _ in throw SomethingWentWrong() }
+  @Test
+  func searchFailure() async {
+    let store = TestStore(initialState: Search.State()) {
+      Search()
+    } withDependencies: {
+      $0.weatherClient.search = { @Sendable _ in
+        struct SomethingWentWrong: Error {}
+        throw SomethingWentWrong()
+      }
     }
 
     await store.send(.searchQueryChanged("S")) {
       $0.searchQuery = "S"
     }
     await store.send(.searchQueryChangeDebounced)
-    await store.receive(.searchResponse(.failure(SomethingWentWrong())))
+    await store.receive(\.searchResponse.failure)
   }
 
-  func testClearQueryCancelsInFlightSearchRequest() async {
-    let store = TestStore(
-      initialState: Search.State(),
-      reducer: Search()
-    ) {
-      $0.weatherClient.search = { _ in .mock }
+  @Test
+  func clearQueryCancelsInFlightSearchRequest() async {
+    let store = TestStore(initialState: Search.State()) {
+      Search()
+    } withDependencies: {
+      $0.weatherClient.search = { @Sendable _ in .mock }
     }
 
     let searchQueryChanged = await store.send(.searchQueryChanged("S")) {
@@ -58,7 +62,8 @@ final class SearchTests: XCTestCase {
     }
   }
 
-  func testTapOnLocation() async {
+  @Test
+  func tapOnLocation() async {
     let specialResult = GeocodingSearch.Result(
       country: "Special Country",
       latitude: 0,
@@ -70,17 +75,16 @@ final class SearchTests: XCTestCase {
     var results = GeocodingSearch.mock.results
     results.append(specialResult)
 
-    let store = TestStore(
-      initialState: Search.State(results: results),
-      reducer: Search()
-    ) {
-      $0.weatherClient.forecast = { _ in .mock }
+    let store = TestStore(initialState: Search.State(results: results)) {
+      Search()
+    } withDependencies: {
+      $0.weatherClient.forecast = { @Sendable _ in .mock }
     }
 
     await store.send(.searchResultTapped(specialResult)) {
       $0.resultForecastRequestInFlight = specialResult
     }
-    await store.receive(.forecastResponse(42, .success(.mock))) {
+    await store.receive(\.forecastResponse) {
       $0.resultForecastRequestInFlight = nil
       $0.weather = Search.State.Weather(
         id: 42,
@@ -111,7 +115,8 @@ final class SearchTests: XCTestCase {
     }
   }
 
-  func testTapOnLocationCancelsInFlightRequest() async {
+  @Test
+  func tapOnLocationCancelsInFlightRequest() async {
     let specialResult = GeocodingSearch.Result(
       country: "Special Country",
       latitude: 0,
@@ -125,11 +130,10 @@ final class SearchTests: XCTestCase {
 
     let clock = TestClock()
 
-    let store = TestStore(
-      initialState: Search.State(results: results),
-      reducer: Search()
-    ) {
-      $0.weatherClient.forecast = { _ in
+    let store = TestStore(initialState: Search.State(results: results)) {
+      Search()
+    } withDependencies: {
+      $0.weatherClient.forecast = { @Sendable _ in
         try await clock.sleep(for: .seconds(0))
         return .mock
       }
@@ -142,7 +146,7 @@ final class SearchTests: XCTestCase {
       $0.resultForecastRequestInFlight = specialResult
     }
     await clock.advance()
-    await store.receive(.forecastResponse(42, .success(.mock))) {
+    await store.receive(\.forecastResponse) {
       $0.resultForecastRequestInFlight = nil
       $0.weather = Search.State.Weather(
         id: 42,
@@ -173,23 +177,24 @@ final class SearchTests: XCTestCase {
     }
   }
 
-  func testTapOnLocationFailure() async {
+  @Test
+  func tapOnLocationFailure() async {
     let results = GeocodingSearch.mock.results
 
-    let store = TestStore(
-      initialState: Search.State(results: results),
-      reducer: Search()
-    ) {
-      $0.weatherClient.forecast = { _ in throw SomethingWentWrong() }
+    let store = TestStore(initialState: Search.State(results: results)) {
+      Search()
+    } withDependencies: {
+      $0.weatherClient.forecast = { @Sendable _ in
+        struct SomethingWentWrong: Error {}
+        throw SomethingWentWrong()
+      }
     }
 
     await store.send(.searchResultTapped(results.first!)) {
       $0.resultForecastRequestInFlight = results.first!
     }
-    await store.receive(.forecastResponse(1, .failure(SomethingWentWrong()))) {
+    await store.receive(\.forecastResponse) {
       $0.resultForecastRequestInFlight = nil
     }
   }
 }
-
-private struct SomethingWentWrong: Equatable, Error {}

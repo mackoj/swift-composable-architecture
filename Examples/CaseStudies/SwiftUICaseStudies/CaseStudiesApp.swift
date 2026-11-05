@@ -5,14 +5,7 @@ import SwiftUI
 struct CaseStudiesApp: App {
   var body: some Scene {
     WindowGroup {
-      RootView(
-        store: Store(
-          initialState: Root.State(),
-          reducer: Root()
-            .signpost()
-            ._printChanges()
-        )
-      )
+      RootView()
     }
   }
 }

@@ -1,4 +1,8 @@
-extension ReducerProtocol {
+import Combine
+import Dispatch
+@_spi(SharedChangeTracking) import Sharing
+
+extension Reducer {
   /// Enhances a reducer with debug logging of received actions and state mutations for the given
   /// printer.
   ///
@@ -7,6 +11,8 @@ extension ReducerProtocol {
   /// - Parameter printer: A printer for printing debug messages.
   /// - Returns: A reducer that prints debug messages for all received actions.
   @inlinable
+  @warn_unqualified_access
+  @_documentation(visibility: public)
   public func _printChanges(
     _ printer: _ReducerPrinter<State, Action>? = .customDump
   ) -> _PrintChangesReducer<Self> {
@@ -14,13 +20,29 @@ extension ReducerProtocol {
   }
 }
 
-public struct _ReducerPrinter<State, Action> {
-  private let _printChange: (_ receivedAction: Action, _ oldState: State, _ newState: State) -> Void
+private let printQueue = DispatchQueue(label: "co.pointfree.swift-composable-architecture.printer")
+
+public struct _ReducerPrinter<State, Action>: Sendable {
+  private let _printChange:
+    @Sendable (
+      _ receivedAction: Action,
+      _ oldState: State,
+      _ newState: State
+    ) -> Void
+  @usableFromInline
+  let queue: DispatchQueue
 
   public init(
-    printChange: @escaping (_ receivedAction: Action, _ oldState: State, _ newState: State) -> Void
+    printChange:
+      @escaping @Sendable (
+        _ receivedAction: Action,
+        _ oldState: State,
+        _ newState: State
+      ) -> Void,
+    queue: DispatchQueue? = nil
   ) {
     self._printChange = printChange
+    self.queue = queue ?? printQueue
   }
 
   public func printChange(receivedAction: Action, oldState: State, newState: State) {
@@ -31,8 +53,6 @@ public struct _ReducerPrinter<State, Action> {
 extension _ReducerPrinter {
   public static var customDump: Self {
     Self { receivedAction, oldState, newState in
-      @Dependency(\.context) var context
-      guard context != .preview else { return }
       var target = ""
       target.write("received action:\n")
       CustomDump.customDump(receivedAction, to: &target, indent: 2)
@@ -44,14 +64,12 @@ extension _ReducerPrinter {
 
   public static var actionLabels: Self {
     Self { receivedAction, _, _ in
-      @Dependency(\.context) var context
-      guard context != .preview else { return }
       print("received action: \(debugCaseOutput(receivedAction))")
     }
   }
 }
 
-public struct _PrintChangesReducer<Base: ReducerProtocol>: ReducerProtocol {
+public struct _PrintChangesReducer<Base: Reducer>: Reducer {
   @usableFromInline
   let base: Base
 
@@ -64,24 +82,52 @@ public struct _PrintChangesReducer<Base: ReducerProtocol>: ReducerProtocol {
     self.printer = printer
   }
 
-  @usableFromInline
-  @Dependency(\.context) var context
-
-  @inlinable
-  public func reduce(
-    into state: inout Base.State, action: Base.Action
-  ) -> EffectTask<Base.Action> {
-    #if DEBUG
-      if self.context != .test, let printer = self.printer {
-        let oldState = state
-        let effects = self.base.reduce(into: &state, action: action)
-        return effects.merge(
-          with: .fireAndForget { [newState = state] in
-            printer.printChange(receivedAction: action, oldState: oldState, newState: newState)
+  #if DEBUG
+    public func _reduce(
+      into state: inout Base.State, action: Base.Action
+    ) -> Effect<Base.Action> {
+      if let printer = self.printer {
+        let changeTracker = SharedChangeTracker(reportUnassertedChanges: false)
+        return changeTracker.track {
+          let oldState = UncheckedSendable(state)
+          let effects = self.base._reduce(into: &state, action: action)
+          return withEscapedDependencies { continuation in
+            effects.merge(
+              with: .publisher {
+                [
+                  newState = UncheckedSendable(state),
+                  action = UncheckedSendable(action),
+                  queue = printer.queue
+                ] in
+                Deferred<Empty<Action, Never>> {
+                  queue.async {
+                    continuation.yield {
+                      changeTracker.assert {
+                        printer.printChange(
+                          receivedAction: action.wrappedValue,
+                          oldState: oldState.wrappedValue,
+                          newState: newState.wrappedValue
+                        )
+                      }
+                    }
+                  }
+                  return Empty()
+                }
+              }
+            )
           }
-        )
+        }
       }
-    #endif
-    return self.base.reduce(into: &state, action: action)
-  }
+      return self.base._reduce(into: &state, action: action)
+    }
+  #else
+    @inlinable
+    public func _reduce(
+      into state: inout Base.State, action: Base.Action
+    ) -> Effect<Base.Action> {
+      return self.base._reduce(into: &state, action: action)
+    }
+  #endif
 }
+
+extension _PrintChangesReducer: Sendable where Base: Sendable {}

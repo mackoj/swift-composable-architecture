@@ -5,7 +5,7 @@
 
   @testable import ComposableArchitecture
 
-  final class DebugTests: XCTestCase {
+  final class DebugTests: BaseTCATestCase {
     func testDebugCaseOutput() {
       enum Action {
         case action1(Bool, label: String)
@@ -43,53 +43,113 @@
       )
     }
 
-    func testBindingAction() {
-      struct State {
-        @BindingState var width = 0
+    func testDebugReducer() async throws {
+      let logs = LockIsolated<String>("")
+      let printer = _ReducerPrinter<Int, Bool>(
+        printChange: { action, oldState, newState in
+          logs.withValue { _ = dump(action, to: &$0) }
+        }
+      )
+
+      let store = await Store<Int, Bool>(initialState: 0) {
+        Reduce<Int, Bool>(internal: { state, action in
+          state += action ? 1 : -1
+          return .none
+        })
+        ._printChanges(printer)
       }
-      let action = BindingAction.set(\State.$width, 50)
-      var dump = ""
-      customDump(action, to: &dump)
-      XCTAssertEqual(
-        dump,
-        #"""
-        BindingAction.set(
-          WritableKeyPath<State, BindingState<Int>>,
-          50
-        )
-        """#
+      await store.send(true)
+      try await Task.sleep(nanoseconds: 300_000_000)
+      expectNoDifference(
+        logs.value,
+        """
+        - true
+
+        """
       )
     }
 
     @MainActor
-    func testDebugReducer() async {
-      struct DebuggedReducer: ReducerProtocol {
-        typealias State = Int
-        typealias Action = Bool
-        func reduce(into state: inout Int, action: Bool) -> EffectTask<Bool> {
-          state += action ? 1 : -1
-          return .none
+    func testDebugReducer_Order() {
+      let logs = LockIsolated<String>("")
+      let printer = _ReducerPrinter<Int, Bool>(
+        printChange: { action, oldState, newState in
+          logs.withValue { _ = dump(action, to: &$0) }
         }
-      }
+      )
 
-      let store = TestStore(initialState: 0, reducer: DebuggedReducer()._printChanges())
-      await store.send(true) { $0 = 1 }
+      let store = Store<Int, Bool>(initialState: 0) {
+        Reduce<Int, Bool>(internal: { state, action in
+          state += action ? 1 : -1
+          return .run { _ in await Task.yield() }
+        })
+        ._printChanges(printer)
+        ._printChanges(printer)
+        ._printChanges(printer)
+        ._printChanges(printer)
+      }
+      store.send(true)
+      store.send(false)
+      store.send(true)
+      store.send(false)
+      _ = XCTWaiter.wait(for: [self.expectation(description: "wait")], timeout: 0.3)
+      expectNoDifference(
+        logs.value,
+        """
+        - true
+        - true
+        - true
+        - true
+        - false
+        - false
+        - false
+        - false
+        - true
+        - true
+        - true
+        - true
+        - false
+        - false
+        - false
+        - false
+
+        """
+      )
     }
 
-    @MainActor
-    func testDebugReducerInPreview() async {
-      struct DebuggedReducer: ReducerProtocol {
-        typealias State = Int
-        typealias Action = Bool
-        func reduce(into state: inout Int, action: Bool) -> EffectTask<Bool> {
-          state += action ? 1 : -1
-          return .none
+    func testDebugReducer_SharedState() async throws {
+      let logs = LockIsolated<String>("")
+      let printer = _ReducerPrinter<State, Bool>(
+        printChange: { action, oldState, newState in
+          logs.withValue {
+            $0.append(diff(oldState, newState).map { "\($0)\n" } ?? "  (No state changes)\n")
+          }
         }
+      )
+
+      struct State {
+        @Shared var count: Int
       }
-      let store = TestStore(initialState: 0, reducer: DebuggedReducer()._printChanges()) {
-        $0.context = .preview
+
+      let store = await Store<State, Bool>(initialState: State(count: Shared(value: 0))) {
+        Reduce<State, Bool>(internal: { state, action in
+          state.$count.withLock { $0 += action ? 1 : -1 }
+          return .none
+        })
+        ._printChanges(printer)
       }
-      await store.send(true) { $0 = 1 }
+      await store.send(true)
+      try await Task.sleep(nanoseconds: 300_000_000)
+      expectNoDifference(
+        logs.value,
+        #"""
+          DebugTests.State(
+        -   _count: #1 0
+        +   _count: #1 1
+          )
+
+        """#
+      )
     }
   }
 #endif
